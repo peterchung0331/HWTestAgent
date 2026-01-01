@@ -95,7 +95,7 @@ export class TestRunner {
           const maxRetry = options.max_retry ?? 3;
 
           for (let attempt = 1; attempt <= maxRetry; attempt++) {
-            if (stepResult.status === 'PASSED') break;
+            if (stepResult.status !== 'FAILED') break;
 
             console.log(`\n🔧 Auto-fix attempt ${attempt}/${maxRetry}...`);
 
@@ -106,7 +106,7 @@ export class TestRunner {
             stepResult = await this.httpAdapter.executeStep(step);
             retry_count++;
 
-            if (stepResult.status === 'PASSED') {
+            if (stepResult.status !== 'FAILED') {
               auto_fixed_count++;
               console.log(`✅ Auto-fix successful!`);
               break;

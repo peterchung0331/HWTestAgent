@@ -74,7 +74,7 @@ router.post('/test/run', authenticateApiKey, async (req: Request, res: Response)
             project_name: project,
             scenario_slug: scenario,
             scenario_name: scenario, // TODO: Get from scenario file
-            status: result.status,
+            status: result.status as 'PASSED' | 'FAILED',
             total_steps: result.total_steps,
             passed_steps: result.passed_steps,
             failed_steps: result.failed_steps,
