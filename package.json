@@ -1,0 +1,48 @@
+{
+  "name": "hwtestagent",
+  "version": "1.0.0",
+  "description": "Hybrid WorkHub Test Agent - 24/7 AI-powered automated testing system",
+  "type": "module",
+  "main": "dist/server/index.js",
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "build": "tsc",
+    "start": "node dist/server/index.js",
+    "test": "echo \"Tests will be added in Phase 2\"",
+    "type-check": "tsc --noEmit",
+    "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed.js"
+  },
+  "keywords": [
+    "testing",
+    "automation",
+    "ai",
+    "workhub",
+    "railway"
+  ],
+  "author": "Peter Chung (peterchung0331)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.3",
+    "@types/pg": "^8.16.0",
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "js-yaml": "^4.1.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.16.3",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.21.0"
+  }
+}

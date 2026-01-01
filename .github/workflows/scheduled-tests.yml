@@ -1,0 +1,73 @@
+name: Scheduled Tests
+
+on:
+  schedule:
+    # Run twice daily at 06:00 and 18:00 UTC (15:00 and 03:00 KST)
+    - cron: '0 6,18 * * *'
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      project:
+        description: 'Project name'
+        required: false
+        default: 'WBHubManager'
+      scenario:
+        description: 'Scenario slug'
+        required: false
+        default: 'precision'
+      environment:
+        description: 'Environment'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - local
+
+jobs:
+  trigger-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger WBHubManager Precision Test
+        run: |
+          PROJECT="${{ github.event.inputs.project || 'WBHubManager' }}"
+          SCENARIO="${{ github.event.inputs.scenario || 'precision' }}"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'production' }}"
+
+          echo "🚀 Triggering test..."
+          echo "   Project: $PROJECT"
+          echo "   Scenario: $SCENARIO"
+          echo "   Environment: $ENVIRONMENT"
+
+          RESPONSE=$(curl -s -X POST ${{ secrets.HWTEST_API_URL }}/api/test/run \
+            -H "Authorization: Bearer ${{ secrets.HWTEST_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"project\": \"$PROJECT\",
+              \"scenario\": \"$SCENARIO\",
+              \"environment\": \"$ENVIRONMENT\",
+              \"triggered_by\": \"schedule\",
+              \"auto_fix\": true,
+              \"max_retry\": 3
+            }")
+
+          echo "📨 Response: $RESPONSE"
+
+          # Check if the request was successful
+          if echo "$RESPONSE" | jq -e '.success == true' > /dev/null; then
+            echo "✅ Test triggered successfully"
+          else
+            echo "❌ Failed to trigger test"
+            exit 1
+          fi
+
+      - name: Wait for completion (optional)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "⏳ Test is running on Railway..."
+          echo "📊 Check results at: ${{ secrets.HWTEST_API_URL }}/api/test/results"
+          echo "🔔 Slack notifications will be sent when complete"
