@@ -1,0 +1,72 @@
+# WBHubManager General Test
+# Railway deployment pre-check - Fast verification of critical items
+
+name: "WBHubManager 일반 테스트"
+slug: "general"
+description: "Railway 배포 전 필수 항목 빠른 체크 (4개 항목)"
+type: GENERAL
+environment: production
+schedule: "0 8,20 * * *"  # Twice daily: 8 AM and 8 PM
+timeout: 180000  # 3 minutes
+notify_on:
+  - failure
+  - recovery
+
+variables:
+  TARGET_URL: "https://wbhub.up.railway.app"
+
+steps:
+  # ============================================
+  # Step 1: Health Check
+  # ============================================
+  - name: "Test 1: Health Check"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/health"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  # ============================================
+  # Step 2: Environment Variables Check
+  # ============================================
+  - name: "Test 2: 환경변수 검증 - Public Key 존재"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/auth/public-key"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          publicKey: "@string"
+    timeout: 10000
+
+  # ============================================
+  # Step 3: Database Connection
+  # ============================================
+  - name: "Test 3: 데이터베이스 연결 - Hub 목록 조회"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/hubs"
+    expect:
+      status: 200
+      json:
+        success: true
+        data: "@array"
+    timeout: 15000
+
+  # ============================================
+  # Step 4: Frontend Route
+  # ============================================
+  - name: "Test 4: Frontend 접근 - 메인 페이지"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/"
+    expect:
+      status: 200
+      headers:
+        content-type: "@contains:text/html"
+    timeout: 15000

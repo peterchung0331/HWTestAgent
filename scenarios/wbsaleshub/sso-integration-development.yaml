@@ -1,0 +1,108 @@
+name: WBSalesHub SSO 통합 테스트 (개발)
+slug: sso-integration-development
+description: WBHubManager와의 SSO 인증 흐름 검증
+type: SSO
+environment: development
+timeout: 300000
+notify_on:
+  - failure
+  - recovery
+variables:
+  HUBMANAGER_URL: http://localhost:3090
+  SALESHUB_URL: http://localhost:3070
+  TEST_EMAIL: test-hwtest@wavebridge.kr
+  TEST_NAME: HWTestAgent
+steps:
+  - name: 'Step 1: HubManager에서 JWT 토큰 발급'
+    type: http
+    method: POST
+    url: '{{HUBMANAGER_URL}}/api/auth/google-login'
+    headers:
+      Content-Type: application/json
+    body:
+      email: '{{TEST_EMAIL}}'
+      name: '{{TEST_NAME}}'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          accessToken: '@string'
+          refreshToken: '@string'
+    timeout: 15000
+    save:
+      JWT_TOKEN: $.data.accessToken
+      REFRESH_TOKEN: $.data.refreshToken
+  - name: 'Step 2: HubManager에서 토큰 검증'
+    type: http
+    method: POST
+    url: '{{HUBMANAGER_URL}}/api/auth/verify'
+    headers:
+      Content-Type: application/json
+    body:
+      token: '{{JWT_TOKEN}}'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          valid: true
+    timeout: 10000
+  - name: 'Step 3: JWT로 SalesHub 접근'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/health'
+    headers:
+      Authorization: Bearer {{JWT_TOKEN}}
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+  - name: 'Step 4: SalesHub - 고객 목록 조회 (인증 필요)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/customers'
+    headers:
+      Authorization: Bearer {{JWT_TOKEN}}
+    expect:
+      status: 200
+      json:
+        success: true
+        data: '@array'
+    timeout: 15000
+  - name: 'Step 5: 유효하지 않은 토큰 거부 확인'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/customers'
+    headers:
+      Authorization: Bearer invalid_token_12345
+    expect:
+      status: 401
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Step 6: HubManager에서 로그아웃'
+    type: http
+    method: POST
+    url: '{{HUBMANAGER_URL}}/api/auth/jwt-logout'
+    headers:
+      Content-Type: application/json
+    body:
+      refreshToken: '{{REFRESH_TOKEN}}'
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+  - name: 'Step 7: 로그아웃 후 토큰 무효화 확인'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/customers'
+    headers:
+      Authorization: Bearer {{JWT_TOKEN}}
+    expect:
+      status: 401
+      json:
+        success: false
+    timeout: 10000

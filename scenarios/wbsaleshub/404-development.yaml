@@ -1,0 +1,224 @@
+name: WBSalesHub 404 테스트 (개발)
+slug: 404-development
+description: 존재하지 않는 리소스에 대한 404 응답 검증 (20개 항목)
+type: '404'
+environment: development
+timeout: 300000
+notify_on:
+  - failure
+  - recovery
+variables:
+  SALESHUB_URL: http://localhost:3070
+steps:
+  - name: 'Test 1: 고객 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/customers/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 2: 고객 ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{SALESHUB_URL}}/api/customers/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      name: Updated Customer
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 3: 고객 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{SALESHUB_URL}}/api/customers/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 4: 고객 연락처 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/customers/99999/contacts'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 5: 고객 연락처 추가 - 고객 없음'
+    type: http
+    method: POST
+    url: '{{SALESHUB_URL}}/api/customers/99999/contacts'
+    headers:
+      Content-Type: application/json
+    body:
+      name: Contact Name
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 6: 고객 미팅 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/customers/99999/meetings'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 7: 고객 미팅 추가 - 고객 없음'
+    type: http
+    method: POST
+    url: '{{SALESHUB_URL}}/api/customers/99999/meetings'
+    headers:
+      Content-Type: application/json
+    body:
+      title: Meeting Title
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 8: 고객 딜 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/customers/99999/deals'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 9: 고객 딜 추가 - 고객 없음'
+    type: http
+    method: POST
+    url: '{{SALESHUB_URL}}/api/customers/99999/deals'
+    headers:
+      Content-Type: application/json
+    body:
+      title: Deal Title
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 10: 미팅 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/meetings/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 11: 미팅 ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{SALESHUB_URL}}/api/meetings/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      title: Updated Meeting
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 12: 미팅 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{SALESHUB_URL}}/api/meetings/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 13: 미팅노트 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/meeting-notes/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 14: 미팅노트 ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{SALESHUB_URL}}/api/meeting-notes/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      content: Updated Note
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 15: 미팅노트 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{SALESHUB_URL}}/api/meeting-notes/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 16: 미팅의 노트 목록 - 미팅 없음'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/meetings/99999/notes'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 17: 미팅 노트 추가 - 미팅 없음'
+    type: http
+    method: POST
+    url: '{{SALESHUB_URL}}/api/meetings/99999/notes'
+    headers:
+      Content-Type: application/json
+    body:
+      content: Note Content
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 18: 계정 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/accounts/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 19: 계정 ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{SALESHUB_URL}}/api/accounts/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      name: Updated Account
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 20: 계정 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{SALESHUB_URL}}/api/accounts/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000

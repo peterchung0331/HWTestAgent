@@ -1,0 +1,114 @@
+name: WBHubManager 인증 테스트 (개발)
+slug: auth-development
+description: Google OAuth 및 Hub 간 JWT SSO 통신 검증 (7개 항목)
+type: AUTH
+environment: development
+timeout: 240000
+notify_on:
+  - failure
+  - recovery
+variables:
+  TARGET_URL: http://localhost:3090
+  TEST_EMAIL: test-hwtest@wavebridge.kr
+  TEST_NAME: HWTestAgent
+steps:
+  - name: 'Test 1: JWT Public Key 엔드포인트'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/auth/public-key'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          publicKey: '@string'
+    timeout: 10000
+    save:
+      PUBLIC_KEY: $.data.publicKey
+  - name: 'Test 2: Hub Token 생성 (세션 없음) - Google OAuth 리다이렉트'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/hub-token'
+    headers:
+      Content-Type: application/json
+    body:
+      hubName: wbfinhub
+    expect:
+      status: 401
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 3: Google OAuth 리다이렉트 URL 생성'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/auth/google'
+    expect:
+      status: 302
+      headers:
+        location: '@contains:accounts.google.com'
+    timeout: 10000
+  - name: 'Test 4: Google 로그인 (테스트용 엔드포인트)'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/google-login'
+    headers:
+      Content-Type: application/json
+    body:
+      email: '{{TEST_EMAIL}}'
+      name: '{{TEST_NAME}}'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          accessToken: '@string'
+          refreshToken: '@string'
+    timeout: 15000
+    save:
+      ACCESS_TOKEN: $.data.accessToken
+      REFRESH_TOKEN: $.data.refreshToken
+  - name: 'Test 5: Access Token 검증'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/verify'
+    headers:
+      Content-Type: application/json
+    body:
+      token: '{{ACCESS_TOKEN}}'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          valid: true
+    timeout: 10000
+  - name: 'Test 6: Refresh Token으로 토큰 갱신'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/refresh'
+    headers:
+      Content-Type: application/json
+    body:
+      refreshToken: '{{REFRESH_TOKEN}}'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          accessToken: '@string'
+    timeout: 15000
+    save:
+      NEW_ACCESS_TOKEN: $.data.accessToken
+  - name: 'Test 7: 로그아웃 (Token 무효화)'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/jwt-logout'
+    headers:
+      Content-Type: application/json
+    body:
+      refreshToken: '{{REFRESH_TOKEN}}'
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000

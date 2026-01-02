@@ -1,0 +1,131 @@
+name: WBHubManager 정밀 테스트 (개발)
+slug: precision-development
+description: Railway 배포 전 필수 검증 테스트 (9개 항목)
+type: PRECISION
+environment: development
+timeout: 300000
+notify_on:
+  - failure
+  - recovery
+variables:
+  TARGET_URL: http://localhost:3090
+steps:
+  - name: 'Test 1: Health Check'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/health'
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+  - name: 'Test 2: GET /api/hubs - Hub 목록 조회'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/hubs'
+    expect:
+      status: 200
+      json:
+        success: true
+        data: '@array'
+    timeout: 10000
+  - name: 'Test 3: JWT Public Key 조회'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/auth/public-key'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          algorithm: RS256
+    timeout: 10000
+  - name: 'Test 4: JWT Token 발급 (Google Login)'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/google-login'
+    headers:
+      Content-Type: application/json
+    body:
+      email: test-hwtest@wavebridge.kr
+      name: HWTestAgent
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          accessToken: '@string'
+          refreshToken: '@string'
+    timeout: 15000
+    save:
+      ACCESS_TOKEN: $.data.accessToken
+      REFRESH_TOKEN: $.data.refreshToken
+  - name: 'Test 5: Access Token 검증'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/verify'
+    headers:
+      Content-Type: application/json
+    body:
+      token: '{{ACCESS_TOKEN}}'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          valid: true
+          user:
+            email: test-hwtest@wavebridge.kr
+    timeout: 10000
+  - name: 'Test 6: Token 갱신 (Refresh)'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/refresh'
+    headers:
+      Content-Type: application/json
+    body:
+      refreshToken: '{{REFRESH_TOKEN}}'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          accessToken: '@string'
+          refreshToken: '@string'
+    timeout: 15000
+    save:
+      NEW_REFRESH_TOKEN: $.data.refreshToken
+  - name: 'Test 7: Logout (Token 무효화)'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/jwt-logout'
+    headers:
+      Content-Type: application/json
+    body:
+      refreshToken: '{{NEW_REFRESH_TOKEN}}'
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+  - name: 'Test 8: 보안 - none 알고리즘 거부'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/verify'
+    headers:
+      Content-Type: application/json
+    body:
+      token: eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxIiwiZW1haWwiOiJoYWNrZXJAZXhhbXBsZS5jb20ifQ.
+    expect:
+      status: 401
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 9: Frontend 접근 테스트'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/'
+    expect:
+      status: 200
+      body_contains: <!DOCTYPE html>
+    timeout: 15000

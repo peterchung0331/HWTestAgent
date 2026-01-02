@@ -1,0 +1,159 @@
+name: WBFinHub 404 테스트 (Docker(PRD))
+slug: 404-docker
+description: 존재하지 않는 리소스에 대한 404 응답 검증 (15개 항목)
+type: '404'
+environment: docker
+timeout: 300000
+notify_on:
+  - failure
+  - recovery
+variables:
+  FINHUB_URL: http://158.180.95.246:3060
+steps:
+  - name: 'Test 1: 계정 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{FINHUB_URL}}/api/accounts/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 2: 계정 ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{FINHUB_URL}}/api/accounts/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      name: Updated Account
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 3: 계정 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{FINHUB_URL}}/api/accounts/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 4: 법인 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{FINHUB_URL}}/api/legal-entities/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 5: 법인 ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{FINHUB_URL}}/api/legal-entities/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      name: Updated Entity
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 6: 법인 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{FINHUB_URL}}/api/legal-entities/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 7: 자산 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{FINHUB_URL}}/api/assets/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 8: 지갑 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{FINHUB_URL}}/api/wallets/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 9: 지갑 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{FINHUB_URL}}/api/wallets/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 10: 트랜잭션 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{FINHUB_URL}}/api/transactions/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 11: 트랜잭션 ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{FINHUB_URL}}/api/transactions/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      amount: 1000
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 12: 트랜잭션 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{FINHUB_URL}}/api/transactions/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 13: 재무 보고서 ID 존재하지 않음'
+    type: http
+    method: GET
+    url: '{{FINHUB_URL}}/api/reports/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 14: 고객 ID 존재하지 않음'
+    type: http
+    method: GET
+    url: '{{FINHUB_URL}}/api/customers/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 15: 딜 ID 존재하지 않음'
+    type: http
+    method: GET
+    url: '{{FINHUB_URL}}/api/deals/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000

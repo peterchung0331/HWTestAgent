@@ -1,0 +1,112 @@
+name: WBHubManager 404 테스트 (Docker(PRD))
+slug: 404-docker
+description: 존재하지 않는 리소스에 대한 404 응답 검증 (10개 항목)
+type: '404'
+environment: docker
+timeout: 240000
+notify_on:
+  - failure
+  - recovery
+variables:
+  TARGET_URL: http://158.180.95.246:3090
+steps:
+  - name: 'Test 1: Hub slug 존재하지 않음'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/hubs/non-existent-hub'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 2: Hub ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/hubs/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 3: Hub ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{TARGET_URL}}/api/hubs/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      name: Updated Hub
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 4: Hub ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{TARGET_URL}}/api/hubs/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 5: 문서 경로 존재하지 않음'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/docs/non-existent-category/non-existent-doc'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 6: 문서 ID 존재하지 않음 (GET)'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/docs/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 7: 문서 ID 존재하지 않음 (PUT)'
+    type: http
+    method: PUT
+    url: '{{TARGET_URL}}/api/docs/99999'
+    headers:
+      Content-Type: application/json
+    body:
+      title: Updated Doc
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 8: 문서 ID 존재하지 않음 (DELETE)'
+    type: http
+    method: DELETE
+    url: '{{TARGET_URL}}/api/docs/99999'
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 9: JWT 토큰 생성 - Hub 존재하지 않음'
+    type: http
+    method: POST
+    url: '{{TARGET_URL}}/api/auth/hub-token'
+    headers:
+      Content-Type: application/json
+    body:
+      hubName: non-existent-hub
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 10: 미등록 API 엔드포인트'
+    type: http
+    method: GET
+    url: '{{TARGET_URL}}/api/this-endpoint-does-not-exist'
+    expect:
+      status: 404
+    timeout: 10000

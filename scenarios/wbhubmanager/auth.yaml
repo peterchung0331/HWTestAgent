@@ -1,0 +1,147 @@
+# WBHubManager Auth Test
+# Google OAuth and JWT SSO authentication flow verification
+
+name: "WBHubManager 인증 테스트"
+slug: "auth"
+description: "Google OAuth 및 Hub 간 JWT SSO 통신 검증 (7개 항목)"
+type: AUTH
+environment: production
+schedule: "0 */8 * * *"  # Every 8 hours
+timeout: 240000  # 4 minutes
+notify_on:
+  - failure
+  - recovery
+
+variables:
+  TARGET_URL: "https://wbhub.up.railway.app"
+  TEST_EMAIL: "test-hwtest@wavebridge.kr"
+  TEST_NAME: "HWTestAgent"
+
+steps:
+  # ============================================
+  # Step 1: JWT Public Key Endpoint
+  # ============================================
+  - name: "Test 1: JWT Public Key 엔드포인트"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/auth/public-key"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          publicKey: "@string"
+    timeout: 10000
+    save:
+      PUBLIC_KEY: "$.data.publicKey"
+
+  # ============================================
+  # Step 2: Google OAuth Redirect (Unauthenticated)
+  # ============================================
+  - name: "Test 2: Hub Token 생성 (세션 없음) - Google OAuth 리다이렉트"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/auth/hub-token"
+    headers:
+      Content-Type: "application/json"
+    body:
+      hubName: "wbfinhub"
+    expect:
+      status: 401
+      json:
+        success: false
+    timeout: 10000
+
+  # ============================================
+  # Step 3: Google OAuth URL Generation
+  # ============================================
+  - name: "Test 3: Google OAuth 리다이렉트 URL 생성"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/auth/google"
+    expect:
+      status: 302
+      headers:
+        location: "@contains:accounts.google.com"
+    timeout: 10000
+
+  # ============================================
+  # Step 4: Google Login (Mock)
+  # ============================================
+  - name: "Test 4: Google 로그인 (테스트용 엔드포인트)"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/auth/google-login"
+    headers:
+      Content-Type: "application/json"
+    body:
+      email: "{{TEST_EMAIL}}"
+      name: "{{TEST_NAME}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          accessToken: "@string"
+          refreshToken: "@string"
+    timeout: 15000
+    save:
+      ACCESS_TOKEN: "$.data.accessToken"
+      REFRESH_TOKEN: "$.data.refreshToken"
+
+  # ============================================
+  # Step 5: Access Token Verification
+  # ============================================
+  - name: "Test 5: Access Token 검증"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/auth/verify"
+    headers:
+      Content-Type: "application/json"
+    body:
+      token: "{{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          valid: true
+    timeout: 10000
+
+  # ============================================
+  # Step 6: Token Refresh
+  # ============================================
+  - name: "Test 6: Refresh Token으로 토큰 갱신"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/auth/refresh"
+    headers:
+      Content-Type: "application/json"
+    body:
+      refreshToken: "{{REFRESH_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          accessToken: "@string"
+    timeout: 15000
+    save:
+      NEW_ACCESS_TOKEN: "$.data.accessToken"
+
+  # ============================================
+  # Step 7: Logout
+  # ============================================
+  - name: "Test 7: 로그아웃 (Token 무효화)"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/auth/jwt-logout"
+    headers:
+      Content-Type: "application/json"
+    body:
+      refreshToken: "{{REFRESH_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000

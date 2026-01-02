@@ -1,0 +1,112 @@
+name: WBSalesHub 정밀 테스트 (Docker(PRD))
+slug: precision-docker
+description: Railway 배포 전 포괄적 검증 테스트 (9개 항목)
+type: PRECISION
+environment: docker
+timeout: 300000
+notify_on:
+  - failure
+  - recovery
+variables:
+  HUBMANAGER_URL: http://158.180.95.246:3090
+  SALESHUB_URL: http://158.180.95.246:3070
+  TEST_EMAIL: test-hwtest@wavebridge.kr
+  TEST_NAME: HWTestAgent
+steps:
+  - name: 'Test 1: Health Check'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/health'
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+  - name: 'Test 2: GET /api/customers - 고객 목록 조회'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/customers'
+    expect:
+      status: 200
+      json:
+        success: true
+        data: '@array'
+    timeout: 15000
+  - name: 'Test 3: GET /api/products - 제품 목록 조회'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/products'
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+  - name: 'Test 4: GET /api/sales - 매출 데이터 조회'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/sales'
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+  - name: 'Test 5: HubManager에서 JWT 토큰 발급'
+    type: http
+    method: POST
+    url: '{{HUBMANAGER_URL}}/api/auth/google-login'
+    headers:
+      Content-Type: application/json
+    body:
+      email: '{{TEST_EMAIL}}'
+      name: '{{TEST_NAME}}'
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          accessToken: '@string'
+    timeout: 15000
+    save:
+      JWT_TOKEN: $.data.accessToken
+  - name: 'Test 6: JWT로 SalesHub 접근 (SSO)'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/health'
+    headers:
+      Authorization: Bearer {{JWT_TOKEN}}
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+  - name: 'Test 7: 보호된 라우트 - 대시보드 접근'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/dashboard'
+    headers:
+      Authorization: Bearer {{JWT_TOKEN}}
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+  - name: 'Test 8: 유효하지 않은 토큰 거부 확인'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/api/dashboard'
+    headers:
+      Authorization: Bearer invalid_token_12345
+    expect:
+      status: 401
+      json:
+        success: false
+    timeout: 10000
+  - name: 'Test 9: Frontend 접근 테스트'
+    type: http
+    method: GET
+    url: '{{SALESHUB_URL}}/'
+    expect:
+      status: 200
+      headers:
+        content-type: '@contains:text/html'
+    timeout: 15000

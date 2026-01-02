@@ -1,0 +1,111 @@
+name: 오라클 프로덕션 프론트엔드 디버그
+slug: oracle-debug-docker
+description: 오라클 프로덕션 환경의 프론트엔드 로딩 및 API 통신 검증
+type: E2E
+environment: docker
+timeout: 60000
+variables:
+  ORACLE_URL: http://158.180.95.246:3090
+  API_URL: http://158.180.95.246:4090
+steps:
+  - name: 'Step 1: 프론트엔드 페이지 로드'
+    type: browser
+    action: goto
+    url: '{{ORACLE_URL}}'
+    timeout: 30000
+    expect:
+      - type: response
+        status: 200
+  - name: 'Step 2: 페이지 로딩 대기'
+    type: browser
+    action: wait
+    selector: body
+    timeout: 10000
+  - name: 'Step 3: 스피너 존재 확인'
+    type: browser
+    action: evaluate
+    script: |
+      () => {
+        const spinner = document.querySelector('[class*="spinner"], [class*="loading"], [class*="animate-spin"]');
+        const bodyText = document.body.innerText;
+        return {
+          hasSpinner: !!spinner,
+          bodyText: bodyText.substring(0, 200),
+          title: document.title,
+          url: window.location.href
+        };
+      }
+    save:
+      PAGE_INFO: $
+  - name: 'Step 4: 스크린샷 캡처'
+    type: browser
+    action: screenshot
+    path: oracle-debug-{{timestamp}}.png
+    fullPage: true
+  - name: 'Step 5: 네트워크 요청 확인'
+    type: browser
+    action: evaluate
+    script: |
+      () => {
+        // Check if API was called
+        const performanceEntries = performance.getEntriesByType('resource');
+        const apiCalls = performanceEntries
+          .filter(entry => entry.name.includes('/api/'))
+          .map(entry => ({
+            url: entry.name,
+            duration: entry.duration,
+            size: entry.transferSize
+          }));
+
+        return {
+          totalRequests: performanceEntries.length,
+          apiCalls: apiCalls,
+          apiCallCount: apiCalls.length
+        };
+      }
+    save:
+      NETWORK_INFO: $
+  - name: 'Step 6: 콘솔 에러 확인'
+    type: browser
+    action: evaluate
+    script: |
+      () => {
+        // Get console errors from window.__consoleErrors if available
+        return {
+          timestamp: new Date().toISOString(),
+          hasErrors: window.__consoleErrors ? window.__consoleErrors.length > 0 : false
+        };
+      }
+    save:
+      CONSOLE_INFO: $
+  - name: 'Step 7: 백엔드 API 직접 테스트'
+    type: http
+    method: GET
+    url: '{{API_URL}}/api/hubs'
+    expect:
+      status: 200
+      json:
+        success: true
+        data: '@array'
+    timeout: 10000
+    save:
+      HUBS_DATA: $.data
+  - name: 'Step 8: Hub 카드 표시 확인'
+    type: browser
+    action: evaluate
+    script: |
+      () => {
+        const hubCards = document.querySelectorAll('[data-testid*="hub"], [class*="hub-card"], a[href*="hub"]');
+        const links = Array.from(document.querySelectorAll('a')).map(a => ({
+          href: a.href,
+          text: a.innerText.substring(0, 50)
+        }));
+
+        return {
+          hubCardCount: hubCards.length,
+          totalLinks: links.length,
+          links: links.slice(0, 10)
+        };
+      }
+    save:
+      HUB_DISPLAY_INFO: $
