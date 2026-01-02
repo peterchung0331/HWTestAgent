@@ -1,0 +1,212 @@
+# WBSalesHub Core API P1 Test
+# 핵심 기능 오류 수준 High 기능 검증 - Customer CRUD, 관계 데이터, 권한
+
+name: "WBSalesHub Core API P1 테스트"
+slug: "core-api-p1"
+description: "핵심 기능 검증 (14개 항목) - Customer CRUD, Contact, 권한, 데이터 무결성"
+type: CORE_API_P1
+priority: P1
+environment: production
+schedule: "0 8,20 * * *"  # 하루 2회 (8시, 20시)
+timeout: 300000  # 5분
+notify_on:
+  - failure
+  - recovery
+
+variables:
+  TARGET_URL: "https://wbsaleshub.up.railway.app"
+  HUBMANAGER_URL: "https://wbhub.up.railway.app"
+  TEST_EMAIL: "test-hwtest@wavebridge.kr"
+  TEST_NAME: "HWTestAgent"
+  TEST_CUSTOMER_NAME: "P1 테스트 고객"
+  TEST_CUSTOMER_EMAIL: "p1-test@example.com"
+
+steps:
+  # ===== 인증 토큰 발급 =====
+  - name: "Setup: HubManager 토큰 발급"
+    type: http
+    method: POST
+    url: "{{HUBMANAGER_URL}}/api/auth/google-login"
+    headers:
+      Content-Type: "application/json"
+    body:
+      email: "{{TEST_EMAIL}}"
+      name: "{{TEST_NAME}}"
+    expect:
+      status: 200
+    save:
+      ACCESS_TOKEN: "response.body.accessToken"
+    timeout: 15000
+
+  # ===== CRUD 테스트 =====
+  - name: "P1-CRUD-001: Customer 생성"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/customers"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      name: "{{TEST_CUSTOMER_NAME}}"
+      email: "{{TEST_CUSTOMER_EMAIL}}"
+      phone: "010-1234-5678"
+      company: "테스트 회사"
+      status: "active"
+    expect:
+      status: 201
+      json:
+        success: true
+    save:
+      CUSTOMER_ID: "response.body.data.id"
+    timeout: 15000
+
+  - name: "P1-CRUD-002: 생성된 Customer 조회"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/customers/{{CUSTOMER_ID}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  - name: "P1-CRUD-003: Customer 수정"
+    type: http
+    method: PUT
+    url: "{{TARGET_URL}}/api/customers/{{CUSTOMER_ID}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      name: "{{TEST_CUSTOMER_NAME}} - 수정됨"
+      status: "inactive"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+
+  - name: "P1-CRUD-004: 수정된 Customer 확인"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/customers/{{CUSTOMER_ID}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  # ===== 관계 데이터 테스트 =====
+  - name: "P1-REL-001: Customer의 Contact 목록 조회"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/customers/{{CUSTOMER_ID}}/contacts"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  - name: "P1-REL-002: Customer에 Contact 생성"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/customers/{{CUSTOMER_ID}}/contacts"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      name: "담당자 테스트"
+      email: "contact@example.com"
+      phone: "010-9876-5432"
+      position: "매니저"
+    expect:
+      status: 201
+    save:
+      CONTACT_ID: "response.body.data.id"
+    timeout: 15000
+
+  # ===== 권한 검증 테스트 =====
+  - name: "P1-AUTH-001: 인증 없이 Customer 조회 시도"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/customers"
+    expect:
+      status: 401
+    timeout: 10000
+
+  - name: "P1-AUTH-002: 인증 없이 Customer 생성 시도"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/customers"
+    headers:
+      Content-Type: "application/json"
+    body:
+      name: "Unauthorized Customer"
+    expect:
+      status: 401
+    timeout: 10000
+
+  # ===== 데이터 무결성 테스트 =====
+  - name: "P1-VAL-001: 필수 필드 누락 (이름 없음)"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/customers"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      email: "no-name@example.com"
+    expect:
+      status: 400
+    timeout: 10000
+
+  - name: "P1-VAL-002: 잘못된 이메일 형식"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/customers"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      name: "Invalid Email Test"
+      email: "not-an-email"
+    expect:
+      status: 400
+    timeout: 10000
+
+  # ===== 정리: 테스트 데이터 삭제 =====
+  - name: "Cleanup: Contact 삭제"
+    type: http
+    method: DELETE
+    url: "{{TARGET_URL}}/api/contacts/{{CONTACT_ID}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+    timeout: 10000
+
+  - name: "P1-CRUD-005: Customer 삭제"
+    type: http
+    method: DELETE
+    url: "{{TARGET_URL}}/api/customers/{{CUSTOMER_ID}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+    timeout: 10000
+
+  - name: "P1-CRUD-006: 삭제된 Customer 조회 (404 확인)"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/customers/{{CUSTOMER_ID}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 404
+    timeout: 10000

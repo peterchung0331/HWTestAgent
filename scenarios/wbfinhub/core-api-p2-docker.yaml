@@ -1,0 +1,175 @@
+# WBFinHub Core API P2 Test
+# 부가 기능 오류 수준 Medium 기능 검증 - 검색, 페이지네이션, 404
+
+name: "WBFinHub Core API P2 테스트"
+slug: "core-api-p2-docker"
+description: "부가 기능 검증 (12개 항목) - 검색, 페이지네이션, 404, 엣지 케이스"
+type: CORE_API_P2
+priority: P2
+environment: docker
+# schedule disabled for docker
+timeout: 300000  # 5분
+notify_on:
+  - failure
+
+variables:
+  TARGET_URL: "http://158.180.95.246:3092"
+  HUBMANAGER_URL: "http://158.180.95.246:3090"
+  TEST_EMAIL: "test-hwtest@wavebridge.kr"
+  TEST_NAME: "HWTestAgent"
+
+steps:
+  # ===== 인증 토큰 발급 =====
+  - name: "Setup: HubManager 토큰 발급"
+    type: http
+    method: POST
+    url: "{{HUBMANAGER_URL}}/api/auth/google-login"
+    headers:
+      Content-Type: "application/json"
+    body:
+      email: "{{TEST_EMAIL}}"
+      name: "{{TEST_NAME}}"
+    expect:
+      status: 200
+    save:
+      ACCESS_TOKEN: "response.body.accessToken"
+    timeout: 15000
+
+  # ===== 검색/필터 테스트 =====
+  - name: "P2-SEARCH-001: Account 키워드 검색"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/accounts?search=test"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+
+  - name: "P2-SEARCH-002: Account 상태 필터"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/accounts?status=active"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+
+  - name: "P2-SEARCH-003: Transaction 유형 필터"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/transactions?type=deposit"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+
+  - name: "P2-SEARCH-004: 빈 검색 결과"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/accounts?search=없는계좌이름xyz123"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+
+  # ===== 페이지네이션 테스트 =====
+  - name: "P2-PAGE-001: limit 적용"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/accounts?limit=5"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  - name: "P2-PAGE-002: limit + offset"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/accounts?limit=5&offset=10"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  # ===== 404 에러 처리 테스트 =====
+  - name: "P2-404-001: 존재하지 않는 Account 조회"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/accounts/99999"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 404
+    timeout: 10000
+
+  - name: "P2-404-002: 존재하지 않는 Account 수정"
+    type: http
+    method: PUT
+    url: "{{TARGET_URL}}/api/accounts/99999"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      name: "수정 시도"
+    expect:
+      status: 404
+    timeout: 10000
+
+  - name: "P2-404-003: 존재하지 않는 Account 삭제"
+    type: http
+    method: DELETE
+    url: "{{TARGET_URL}}/api/accounts/99999"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 404
+    timeout: 10000
+
+  - name: "P2-404-004: 존재하지 않는 Transaction 조회"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/transactions/99999"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 404
+    timeout: 10000
+
+  # ===== 엣지 케이스 테스트 =====
+  - name: "P2-EDGE-001: 특수문자 검색"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/accounts?search=<script>"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+    timeout: 10000
+
+  - name: "P2-EDGE-002: 한글 검색"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/accounts?search=테스트"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+    timeout: 10000

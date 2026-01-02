@@ -8,11 +8,24 @@ import { join } from 'path';
 import yaml from 'js-yaml';
 import { HttpTestStep } from '../adapters/HttpAdapter.js';
 
+export type ScenarioType =
+  | 'SMOKE'
+  | 'CORE_API_P0'
+  | 'CORE_API_P1'
+  | 'CORE_API_P2'
+  | 'PRECISION'
+  | 'SSO'
+  | 'API'
+  | 'E2E';
+
+export type ScenarioPriority = 'P0' | 'P1' | 'P2' | 'P3';
+
 export interface Scenario {
   name: string;
   slug: string;
   description: string;
-  type: 'PRECISION' | 'SSO' | 'API' | 'E2E';
+  type: ScenarioType;
+  priority?: ScenarioPriority;
   environment: 'production' | 'staging' | 'local';
   schedule?: string;
   timeout: number;
@@ -63,6 +76,7 @@ export class ScenarioLoader {
       slug: data.slug,
       description: data.description || '',
       type: data.type || 'API',
+      priority: data.priority,
       environment: data.environment || 'production',
       schedule: data.schedule,
       timeout: data.timeout || 300000,

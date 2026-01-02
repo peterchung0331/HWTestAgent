@@ -1,0 +1,172 @@
+# WBHubManager Core API P1 Test
+# 핵심 기능 오류 수준 High 기능 검증 - CRUD, 권한, 데이터 무결성
+
+name: "WBHubManager Core API P1 테스트"
+slug: "core-api-p1"
+description: "핵심 기능 검증 (12개 항목) - Document CRUD, 권한, 데이터 무결성"
+type: CORE_API_P1
+priority: P1
+environment: production
+schedule: "0 8,20 * * *"  # 하루 2회 (8시, 20시)
+timeout: 300000  # 5분
+notify_on:
+  - failure
+  - recovery
+
+variables:
+  TARGET_URL: "https://wbhub.up.railway.app"
+  TEST_EMAIL: "test-hwtest@wavebridge.kr"
+  TEST_NAME: "HWTestAgent"
+  TEST_DOC_TITLE: "P1 테스트 문서"
+  TEST_DOC_CONTENT: "자동화 테스트용 문서입니다."
+
+steps:
+  # ===== 인증 토큰 발급 =====
+  - name: "Setup: 토큰 발급"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/auth/google-login"
+    headers:
+      Content-Type: "application/json"
+    body:
+      email: "{{TEST_EMAIL}}"
+      name: "{{TEST_NAME}}"
+    expect:
+      status: 200
+    save:
+      ACCESS_TOKEN: "response.body.accessToken"
+    timeout: 15000
+
+  # ===== CRUD 테스트 =====
+  - name: "P1-CRUD-001: Document 생성"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/documents"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      title: "{{TEST_DOC_TITLE}}"
+      content: "{{TEST_DOC_CONTENT}}"
+      hub: "wbhubmanager"
+      category: "test"
+      slug: "p1-test-{{$timestamp}}"
+      published: false
+    expect:
+      status: 201
+      json:
+        success: true
+    save:
+      DOC_SLUG: "response.body.data.slug"
+    timeout: 15000
+
+  - name: "P1-CRUD-002: 생성된 Document 조회"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/documents/wbhubmanager/test/{{DOC_SLUG}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  - name: "P1-CRUD-003: Document 수정"
+    type: http
+    method: PUT
+    url: "{{TARGET_URL}}/api/documents/wbhubmanager/test/{{DOC_SLUG}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      title: "{{TEST_DOC_TITLE}} - 수정됨"
+      content: "{{TEST_DOC_CONTENT}} - 업데이트"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+
+  - name: "P1-CRUD-004: 수정된 Document 확인"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/documents/wbhubmanager/test/{{DOC_SLUG}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  - name: "P1-CRUD-005: Document 삭제"
+    type: http
+    method: DELETE
+    url: "{{TARGET_URL}}/api/documents/wbhubmanager/test/{{DOC_SLUG}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+    timeout: 10000
+
+  - name: "P1-CRUD-006: 삭제된 Document 조회 (404 확인)"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/documents/wbhubmanager/test/{{DOC_SLUG}}"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 404
+    timeout: 10000
+
+  # ===== 권한 검증 테스트 =====
+  - name: "P1-AUTH-001: 인증 없이 문서 목록 조회 (공개 허용)"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/documents"
+    expect:
+      status: 200
+    timeout: 10000
+
+  - name: "P1-AUTH-002: 인증 없이 문서 생성 시도"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/documents"
+    headers:
+      Content-Type: "application/json"
+    body:
+      title: "Unauthorized Test"
+      content: "Should fail"
+    expect:
+      status: 401
+    timeout: 10000
+
+  # ===== 데이터 무결성 테스트 =====
+  - name: "P1-VAL-001: 필수 필드 누락 (title 없음)"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/documents"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      content: "제목 없는 문서"
+      hub: "wbhubmanager"
+    expect:
+      status: 400
+    timeout: 10000
+
+  - name: "P1-VAL-002: 필수 필드 누락 (hub 없음)"
+    type: http
+    method: POST
+    url: "{{TARGET_URL}}/api/documents"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+      Content-Type: "application/json"
+    body:
+      title: "Hub 없는 문서"
+      content: "테스트"
+    expect:
+      status: 400
+    timeout: 10000

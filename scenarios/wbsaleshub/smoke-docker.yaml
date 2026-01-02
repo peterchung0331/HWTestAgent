@@ -1,0 +1,95 @@
+# WBSalesHub Smoke Test
+# 배포 전 최소 검증 - Health, SSO Auth, Frontend
+
+name: "WBSalesHub 스모크 테스트"
+slug: "smoke-docker"
+description: "배포 전 최소 검증 (5개 항목) - Health, HubManager 인증, SSO 토큰 접근, Frontend"
+type: SMOKE
+priority: P0
+environment: docker
+# schedule disabled for docker
+timeout: 120000  # 2분
+notify_on:
+  - failure
+  - recovery
+
+variables:
+  TARGET_URL: "http://158.180.95.246:3091"
+  HUBMANAGER_URL: "http://158.180.95.246:3090"
+  TEST_EMAIL: "test-hwtest@wavebridge.kr"
+  TEST_NAME: "HWTestAgent"
+
+steps:
+  # ============================================
+  # SMOKE-001: Health Check
+  # ============================================
+  - name: "SMOKE-001: Health Check"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/health"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  # ============================================
+  # SMOKE-002: HubManager Public Key 조회
+  # ============================================
+  - name: "SMOKE-002: HubManager Public Key 조회"
+    type: http
+    method: GET
+    url: "{{HUBMANAGER_URL}}/api/auth/public-key"
+    expect:
+      status: 200
+      json:
+        publicKey: "@string"
+    timeout: 10000
+
+  # ============================================
+  # SMOKE-003: HubManager 토큰 발급
+  # ============================================
+  - name: "SMOKE-003: HubManager 토큰 발급"
+    type: http
+    method: POST
+    url: "{{HUBMANAGER_URL}}/api/auth/google-login"
+    headers:
+      Content-Type: "application/json"
+    body:
+      email: "{{TEST_EMAIL}}"
+      name: "{{TEST_NAME}}"
+    expect:
+      status: 200
+      json:
+        accessToken: "@string"
+    save:
+      ACCESS_TOKEN: "response.body.accessToken"
+    timeout: 15000
+
+  # ============================================
+  # SMOKE-004: SSO 토큰으로 API 접근
+  # ============================================
+  - name: "SMOKE-004: SSO 토큰으로 Customer 목록 조회"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/api/customers"
+    headers:
+      Authorization: "Bearer {{ACCESS_TOKEN}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 15000
+
+  # ============================================
+  # SMOKE-005: Frontend 접근
+  # ============================================
+  - name: "SMOKE-005: Frontend 접근"
+    type: http
+    method: GET
+    url: "{{TARGET_URL}}/"
+    expect:
+      status: 200
+      headers:
+        content-type: "@contains:text/html"
+    timeout: 15000

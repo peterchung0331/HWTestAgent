@@ -229,6 +229,7 @@ router.get('/scenarios', async (req: Request, res: Response) => {
             name: scenario.name,
             description: scenario.description,
             type: scenario.type,
+            priority: scenario.priority,
             environment: scenario.environment,
             schedule: scenario.schedule,
             steps: scenario.steps.map(step => ({
