@@ -8,10 +8,17 @@
     "dev": "tsx watch src/server/index.ts",
     "build": "tsc",
     "start": "node dist/server/index.js",
-    "test": "echo \"Tests will be added in Phase 2\"",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:saleshub": "playwright test tests/e2e/saleshub-sso.spec.ts",
+    "test:saleshub:headed": "playwright test tests/e2e/saleshub-sso.spec.ts --headed",
+    "test:report": "playwright show-report test-results/html-report",
+    "playwright:install": "playwright install chromium",
     "type-check": "tsc --noEmit",
     "db:migrate": "node scripts/migrate.js",
-    "db:seed": "node scripts/seed.js"
+    "db:seed": "node scripts/seed.js",
+    "db:seed-scenarios": "node scripts/seed-scenarios.mjs"
   },
   "keywords": [
     "testing",
@@ -40,6 +47,7 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/cors": "^2.8.19",
     "@types/js-yaml": "^4.0.9",
     "@types/node-cron": "^3.0.11",
