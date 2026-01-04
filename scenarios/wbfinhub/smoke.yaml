@@ -1,0 +1,90 @@
+# WBFinHub Smoke Test Scenario
+# 5 critical checks for quick verification during development
+
+name: "FinHub Smoke Test"
+slug: "smoke"
+description: "재무 허브 필수 기능 빠른 체크 (5개 항목, 1분 이내)"
+type: SMOKE
+environment: development
+timeout: 60000  # 1 minute
+retries: 1      # 실패 시 1회 재시도
+
+variables:
+  TARGET_URL: "http://localhost:3091"
+
+checks:
+  # ============================================
+  # Check 1: Health Check API
+  # ============================================
+  - id: health-check
+    name: "Health Check API"
+    priority: critical
+    request:
+      method: GET
+      url: "{{TARGET_URL}}/api/health"
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        contains: "ok"
+
+  # ============================================
+  # Check 2: JWT Public Key 조회
+  # ============================================
+  - id: jwt-public-key
+    name: "JWT Public Key 조회"
+    priority: critical
+    request:
+      method: GET
+      url: "{{TARGET_URL}}/api/auth/public-key"
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        hasKey: "publicKey"
+
+  # ============================================
+  # Check 3: 재무 데이터 조회
+  # ============================================
+  - id: financial-data
+    name: "재무 데이터 조회"
+    priority: high
+    request:
+      method: GET
+      url: "{{TARGET_URL}}/api/financial/summary"
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        isArray: true
+        # 또는 hasKey: "data"
+
+  # ============================================
+  # Check 4: DB 연결 확인
+  # ============================================
+  - id: db-connection
+    name: "DB 연결 확인"
+    priority: critical
+    request:
+      method: GET
+      url: "{{TARGET_URL}}/api/health/db"
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        contains: "connected"
+
+  # ============================================
+  # Check 5: Frontend 접근 테스트
+  # ============================================
+  - id: frontend-access
+    name: "Frontend 접근 테스트"
+    priority: high
+    request:
+      method: GET
+      url: "{{TARGET_URL}}/"
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        contains: "<!DOCTYPE html>"
