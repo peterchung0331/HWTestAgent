@@ -29,10 +29,10 @@ pids/
 coverage/
 .nyc_output/
 
-# Test results - Playwright 자동 생성 파일만 제외, 리포트는 유지
-test-results/*
-!test-results/MyTester/
-!test-results/MyTester/reports/
+# Test results - Playwright 임시 파일만 제외, 리포트는 커밋
+test-results/.last-run.json
+test-results/**/*.zip
+test-results/**/trace.zip
 
 # IDE
 .vscode/
