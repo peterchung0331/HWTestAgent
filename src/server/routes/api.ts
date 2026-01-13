@@ -207,6 +207,201 @@ router.get('/test/stats/:project', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/error-patterns
+ * Get error patterns with filters
+ */
+router.get('/error-patterns', async (req: Request, res: Response) => {
+  try {
+    const { project, category, query, limit, offset } = req.query;
+
+    const ErrorPatternRepository = (await import('../../storage/repositories/ErrorPatternRepository.js')).default;
+
+    const patterns = await ErrorPatternRepository.searchErrorPatterns({
+      project: project as string,
+      category: category as string,
+      query: query as string,
+      limit: limit ? parseInt(limit as string) : 20,
+      offset: offset ? parseInt(offset as string) : 0
+    });
+
+    res.json({
+      success: true,
+      data: patterns
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/error-patterns/:id
+ * Get error pattern by ID with solutions
+ */
+router.get('/error-patterns/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const ErrorSearchService = (await import('../../services/errorSearch.service.js')).default;
+
+    const result = await ErrorSearchService.getErrorPatternWithSolutions(parseInt(id));
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/error-patterns/record
+ * Record error occurrence
+ */
+router.post('/error-patterns/record', async (req: Request, res: Response) => {
+  try {
+    const ErrorSearchService = (await import('../../services/errorSearch.service.js')).default;
+
+    const result = await ErrorSearchService.recordErrorOccurrence(req.body);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/error-patterns/stats
+ * Get error pattern statistics
+ */
+router.get('/error-patterns/stats', async (req: Request, res: Response) => {
+  try {
+    const { project } = req.query;
+
+    const ErrorSearchService = (await import('../../services/errorSearch.service.js')).default;
+
+    const stats = await ErrorSearchService.getErrorPatternStats(project as string);
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/templates
+ * Get test script templates
+ */
+router.get('/templates', async (req: Request, res: Response) => {
+  try {
+    const { type, tags } = req.query;
+
+    const TemplateRepository = (await import('../../storage/repositories/TemplateRepository.js')).default;
+
+    const templates = await TemplateRepository.searchTemplates({
+      type: type as any,
+      tags: tags ? (Array.isArray(tags) ? tags as string[] : [tags as string]) : undefined,
+      limit: 100
+    });
+
+    res.json({
+      success: true,
+      data: templates
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/templates/:id
+ * Get template by ID
+ */
+router.get('/templates/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const TemplateRepository = (await import('../../storage/repositories/TemplateRepository.js')).default;
+
+    const template = await TemplateRepository.getTemplateById(parseInt(id));
+
+    if (!template) {
+      res.status(404).json({
+        success: false,
+        error: 'Template not found'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: template
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/templates/:id/generate
+ * Generate script from template
+ */
+router.post('/templates/:id/generate', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { variables } = req.body;
+
+    const TemplateEngineService = (await import('../../services/templateEngine.service.js')).default;
+
+    const result = await TemplateEngineService.generateScript({
+      template_id: parseInt(id),
+      variables
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
  * GET /api/health
  * Health check endpoint
  */
