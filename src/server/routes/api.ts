@@ -9,9 +9,12 @@ import { Environment, TriggerSource } from '../../storage/models/TestRun.js';
 import TestRepository from '../../storage/repositories/TestRepository.js';
 import SlackNotifier from '../../notification/SlackNotifier.js';
 import { authenticateApiKey } from '../middleware/auth.js';
+import { ScenarioLoader } from '../../runner/scenarios/ScenarioLoader.js';
+import errorPatternsRouter from './errorPatterns.js';
 
 const router: Router = express.Router();
 const testRunner = new TestRunner();
+const scenarioLoader = new ScenarioLoader();
 
 /**
  * POST /api/test/run
@@ -207,6 +210,59 @@ router.get('/test/stats/:project', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/scenarios
+ * Get all available test scenarios
+ */
+router.get('/scenarios', async (req: Request, res: Response) => {
+  try {
+    const projects = ['wbhubmanager', 'wbsaleshub', 'wbfinhub', 'wbonboardinghub'];
+    const scenarios: any[] = [];
+
+    for (const project of projects) {
+      const scenarioSlugs = scenarioLoader.listScenarios(project);
+
+      for (const slug of scenarioSlugs) {
+        try {
+          const scenario = scenarioLoader.loadScenario(project, slug);
+          scenarios.push({
+            project,
+            slug: scenario.slug,
+            name: scenario.name,
+            description: scenario.description,
+            type: scenario.type,
+            priority: scenario.priority,
+            environment: scenario.environment,
+            schedule: scenario.schedule,
+            steps: scenario.steps.map(step => ({
+              name: step.name,
+              type: step.type,
+              method: step.method,
+              url: step.url,
+              timeout: step.timeout
+            })),
+            stepCount: scenario.steps.length
+          });
+        } catch (error) {
+          console.warn(`Could not load scenario ${project}/${slug}:`, error);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: scenarios
+    });
+
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
  * GET /api/health
  * Health check endpoint
  */
@@ -220,5 +276,8 @@ router.get('/health', async (req: Request, res: Response) => {
     }
   });
 });
+
+// Error Pattern Routes
+router.use('/', errorPatternsRouter);
 
 export default router;
