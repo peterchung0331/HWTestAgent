@@ -1,5 +1,6 @@
+# syntax=docker/dockerfile:1.4
 # HWTestAgent Dockerfile
-# Multi-stage build for production
+# Multi-stage build for production with BuildKit cache
 
 # ============================================
 # Stage 1: Build
@@ -8,12 +9,18 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# npm timeout settings (prevent ETIMEDOUT errors)
+RUN npm config set fetch-timeout 120000 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000
+
 # Copy package files
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies with BuildKit cache mount
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 # Copy source code
 COPY src ./src
@@ -30,14 +37,23 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install production dependencies only
+# npm timeout settings
+RUN npm config set fetch-timeout 120000 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000
+
+# Install production dependencies only with BuildKit cache
 COPY package*.json ./
-RUN npm ci --only=production
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --only=production
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/scenarios ./scenarios
 COPY --from=builder /app/scripts ./scripts
+
+# Copy migrations
+COPY migrations ./migrations
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \

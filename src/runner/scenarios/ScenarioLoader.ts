@@ -14,6 +14,7 @@ export interface Scenario {
   description: string;
   type: 'PRECISION' | 'SSO' | 'API' | 'E2E';
   environment: 'production' | 'staging' | 'local';
+  priority?: string;
   schedule?: string;
   timeout: number;
   notify_on: string[];
