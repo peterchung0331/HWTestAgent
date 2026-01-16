@@ -204,19 +204,97 @@ The Auto-Fix system automatically resolves common issues:
 
 ## 📅 Deployment
 
-### Railway
+### Oracle Cloud (Production)
+
+**Recommended deployment method for centralized error database across multiple PCs.**
+
+#### Prerequisites
+- SSH access to Oracle Cloud server (158.180.95.246)
+- PostgreSQL database `testagent` created on Oracle server
+- Doppler secrets configured for production environment
+
+#### Deployment Steps
 
 ```bash
-# Install Railway CLI
-npm install -g @railway/cli
+# 1. Commit and push your changes
+git add .
+git commit -m "feat: Add feature"
+git push origin master
 
-# Login and link project
-railway login
-railway link
-
-# Deploy
-railway up
+# 2. Run deployment script
+./scripts/deploy-oracle.sh
 ```
+
+The script automatically:
+1. ✅ Validates local changes (type check)
+2. ✅ Pushes to GitHub
+3. ✅ SSH to Oracle server
+4. ✅ Pulls latest code
+5. ✅ Builds Docker image with BuildKit
+6. ✅ Starts container with health check
+7. ✅ Verifies external access
+
+#### Access URLs
+- **Dashboard**: https://workhub.biz/testagent
+- **API Health**: https://workhub.biz/testagent/health
+- **Error Patterns**: https://workhub.biz/testagent/api/error-patterns
+
+#### Manual Deployment
+
+```bash
+# SSH to Oracle server
+ssh -i ~/.ssh/oracle-cloud.key ubuntu@158.180.95.246
+
+# Navigate to project
+cd /home/ubuntu/workhub/HWTestAgent
+
+# Pull latest code
+git pull origin master
+
+# Rebuild and restart
+docker-compose down
+DOCKER_BUILDKIT=1 docker-compose build
+docker-compose up -d
+
+# Check logs
+docker logs -f hwtestagent-api
+```
+
+#### Database Setup (One-time)
+
+```sql
+-- On Oracle server
+sudo -u postgres psql
+
+CREATE DATABASE testagent;
+CREATE USER testagent_user WITH PASSWORD 'testagent_secure_password';
+GRANT ALL PRIVILEGES ON DATABASE testagent TO testagent_user;
+\c testagent
+GRANT ALL ON SCHEMA public TO testagent_user;
+```
+
+#### Nginx Configuration
+
+Add to `/etc/nginx/sites-available/workhub`:
+
+```nginx
+location /testagent/ {
+    rewrite ^/testagent/?(.*)$ /$1 break;
+    proxy_pass http://localhost:4100;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 60s;
+}
+```
+
+See [nginx.conf.example](nginx.conf.example) for complete configuration.
+
+### Railway (Deprecated)
+
+⚠️ Railway deployment is deprecated. Use Oracle Cloud for production.
 
 ### GitHub Actions
 
