@@ -3,7 +3,8 @@
  * Database operations for error patterns, solutions, and occurrences
  */
 
-import { query } from '../db.js';
+import { query, getClient } from '../db.js';
+import { PoolClient } from 'pg';
 import {
   ErrorPattern,
   CreateErrorPatternInput,
@@ -24,8 +25,8 @@ export class ErrorPatternRepository {
   /**
    * Create or update an error pattern (upsert by error_hash)
    */
-  async upsertErrorPattern(input: CreateErrorPatternInput): Promise<ErrorPattern> {
-    const result = await query<ErrorPattern>(`
+  async upsertErrorPattern(input: CreateErrorPatternInput, client?: PoolClient): Promise<ErrorPattern> {
+    const sql = `
       INSERT INTO error_patterns (
         project_name,
         error_hash,
@@ -42,7 +43,9 @@ export class ErrorPatternRepository {
         occurrence_count = error_patterns.occurrence_count + 1,
         last_seen = NOW()
       RETURNING *
-    `, [
+    `;
+
+    const params = [
       input.project_name,
       input.error_hash,
       input.error_message,
@@ -51,7 +54,11 @@ export class ErrorPatternRepository {
       input.method || null,
       input.status_code || null,
       input.confidence || 0.0
-    ]);
+    ];
+
+    const result = client
+      ? await client.query<ErrorPattern>(sql, params)
+      : await query<ErrorPattern>(sql, params);
 
     return result.rows[0];
   }
@@ -197,8 +204,8 @@ export class ErrorPatternRepository {
   /**
    * Create error occurrence
    */
-  async createErrorOccurrence(input: CreateErrorOccurrenceInput): Promise<ErrorOccurrence> {
-    const result = await query<ErrorOccurrence>(`
+  async createErrorOccurrence(input: CreateErrorOccurrenceInput, client?: PoolClient): Promise<ErrorOccurrence> {
+    const sql = `
       INSERT INTO error_occurrences (
         error_pattern_id,
         environment,
@@ -208,14 +215,20 @@ export class ErrorPatternRepository {
         test_run_id
       ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
-    `, [
+    `;
+
+    const params = [
       input.error_pattern_id,
       input.environment,
       input.project_name,
       input.stack_trace || null,
       input.context_info ? JSON.stringify(input.context_info) : null,
       input.test_run_id || null
-    ]);
+    ];
+
+    const result = client
+      ? await client.query<ErrorOccurrence>(sql, params)
+      : await query<ErrorOccurrence>(sql, params);
 
     return result.rows[0];
   }
@@ -282,6 +295,125 @@ export class ErrorPatternRepository {
       patterns_with_solutions: 0,
       avg_occurrence_count: 0
     };
+  }
+
+  /**
+   * Batch record errors (efficient bulk insert)
+   */
+  async batchRecordErrors(errors: Array<{
+    project_name: string;
+    error_hash: string;
+    error_message: string;
+    error_category?: string;
+    environment: string;
+    stack_trace?: string;
+    context_info?: Record<string, any>;
+    test_run_id?: number;
+  }>): Promise<{
+    patterns: ErrorPattern[];
+    occurrences: ErrorOccurrence[];
+  }> {
+    if (errors.length === 0) {
+      return { patterns: [], occurrences: [] };
+    }
+
+    if (errors.length > 100) {
+      throw new Error('Maximum 100 errors per batch');
+    }
+
+    const client = await getClient();
+
+    try {
+      await client.query('BEGIN');
+
+      // Prepare arrays for UNNEST
+      const projectNames = errors.map(e => e.project_name);
+      const errorHashes = errors.map(e => e.error_hash);
+      const errorMessages = errors.map(e => e.error_message);
+      const errorCategories = errors.map(e => e.error_category || null);
+
+      // Batch upsert patterns
+      const patternsResult = await client.query<ErrorPattern>(`
+        WITH input_data AS (
+          SELECT * FROM UNNEST(
+            $1::text[],
+            $2::text[],
+            $3::text[],
+            $4::text[]
+          ) AS t(project_name, error_hash, error_message, error_category)
+        )
+        INSERT INTO error_patterns (
+          project_name,
+          error_hash,
+          error_message,
+          error_category,
+          confidence,
+          occurrence_count
+        )
+        SELECT
+          project_name,
+          error_hash,
+          error_message,
+          error_category,
+          0.0,
+          1
+        FROM input_data
+        ON CONFLICT (project_name, error_hash)
+        DO UPDATE SET
+          occurrence_count = error_patterns.occurrence_count + 1,
+          last_seen = NOW()
+        RETURNING *
+      `, [projectNames, errorHashes, errorMessages, errorCategories]);
+
+      const patterns = patternsResult.rows;
+
+      // Create map for quick lookup
+      const patternMap = new Map<string, number>();
+      patterns.forEach(p => {
+        patternMap.set(`${p.project_name}:${p.error_hash}`, p.id);
+      });
+
+      // Prepare arrays for occurrences
+      const patternIds = errors.map(e => patternMap.get(`${e.project_name}:${e.error_hash}`)!);
+      const environments = errors.map(e => e.environment);
+      const projectNamesForOcc = errors.map(e => e.project_name);
+      const stackTraces = errors.map(e => e.stack_trace || null);
+      const contextInfos = errors.map(e => e.context_info ? JSON.stringify(e.context_info) : null);
+      const testRunIds = errors.map(e => e.test_run_id || null);
+
+      // Batch insert occurrences
+      const occurrencesResult = await client.query<ErrorOccurrence>(`
+        INSERT INTO error_occurrences (
+          error_pattern_id,
+          environment,
+          project_name,
+          stack_trace,
+          context_info,
+          test_run_id
+        )
+        SELECT * FROM UNNEST(
+          $1::integer[],
+          $2::text[],
+          $3::text[],
+          $4::text[],
+          $5::jsonb[],
+          $6::integer[]
+        )
+        RETURNING *
+      `, [patternIds, environments, projectNamesForOcc, stackTraces, contextInfos, testRunIds]);
+
+      await client.query('COMMIT');
+
+      return {
+        patterns,
+        occurrences: occurrencesResult.rows
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 

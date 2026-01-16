@@ -286,6 +286,59 @@ router.post('/error-patterns/record', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/error-patterns/:id/solutions
+ * Add solution to an error pattern
+ */
+router.post('/error-patterns/:id/solutions', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      solution_title,
+      solution_description,
+      solution_steps,
+      files_modified,
+      code_snippets,
+      reference_docs,
+      related_commit_hash,
+      work_log_path
+    } = req.body;
+
+    if (!solution_title || !solution_description || !solution_steps) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: solution_title, solution_description, solution_steps'
+      });
+      return;
+    }
+
+    const ErrorPatternRepository = (await import('../../storage/repositories/ErrorPatternRepository.js')).default;
+
+    const solution = await ErrorPatternRepository.createErrorSolution({
+      error_pattern_id: parseInt(id),
+      solution_title,
+      solution_description,
+      solution_steps,
+      files_modified,
+      code_snippets,
+      reference_docs,
+      related_commit_hash,
+      work_log_path
+    });
+
+    res.json({
+      success: true,
+      data: solution
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
  * GET /api/error-patterns/stats
  * Get error pattern statistics
  */
@@ -391,6 +444,81 @@ router.post('/templates/:id/generate', async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: result
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/error-patterns/batch-record
+ * Batch record multiple errors
+ */
+router.post('/error-patterns/batch-record', async (req: Request, res: Response) => {
+  try {
+    const { errors } = req.body;
+
+    if (!Array.isArray(errors)) {
+      res.status(400).json({
+        success: false,
+        error: 'errors must be an array'
+      });
+      return;
+    }
+
+    if (errors.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'errors array cannot be empty'
+      });
+      return;
+    }
+
+    if (errors.length > 100) {
+      res.status(400).json({
+        success: false,
+        error: 'Maximum 100 errors per batch'
+      });
+      return;
+    }
+
+    const ErrorPatternRepository = (await import('../../storage/repositories/ErrorPatternRepository.js')).default;
+
+    const result = await ErrorPatternRepository.batchRecordErrors(errors);
+
+    res.json({
+      success: true,
+      data: {
+        patterns_count: result.patterns.length,
+        occurrences_count: result.occurrences.length
+      }
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/background-queue/status
+ * Get background queue status
+ */
+router.get('/background-queue/status', async (req: Request, res: Response) => {
+  try {
+    const BackgroundQueueService = (await import('../../services/backgroundQueue.service.js')).default;
+
+    const status = BackgroundQueueService.getStatus();
+
+    res.json({
+      success: true,
+      data: status
     });
   } catch (error) {
     console.error('❌ API error:', error);
