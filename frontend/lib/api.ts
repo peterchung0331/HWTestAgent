@@ -13,6 +13,12 @@ import type {
   TestStatistics,
   TestScriptTemplate,
   TemplateFilters,
+  ChecklistSummary,
+  ChecklistWithItems,
+  ChecklistFilters,
+  ChecklistStats,
+  ChecklistItemWithContext,
+  ChecklistCategory,
 } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4100/api';
@@ -169,4 +175,49 @@ export async function getHealthStatus(): Promise<ApiResponse<{
   version: string;
 }>> {
   return fetchApi('/health');
+}
+
+// ============================================
+// Debugging Checklists API
+// ============================================
+
+export async function getChecklists(
+  filters: ChecklistFilters = {}
+): Promise<ApiResponse<ChecklistSummary[]>> {
+  const query = buildQueryString(filters);
+  return fetchApi<ChecklistSummary[]>(`/debugging-checklists${query}`);
+}
+
+export async function getChecklistById(
+  id: number
+): Promise<ApiResponse<ChecklistWithItems>> {
+  return fetchApi<ChecklistWithItems>(`/debugging-checklists/${id}`);
+}
+
+export async function getChecklistsByCategory(
+  category: ChecklistCategory
+): Promise<ApiResponse<ChecklistWithItems[]>> {
+  return fetchApi<ChecklistWithItems[]>(`/debugging-checklists/category/${category}`);
+}
+
+export async function getChecklistCategories(): Promise<ApiResponse<{ category: ChecklistCategory; count: number }[]>> {
+  return fetchApi(`/debugging-checklists/categories`);
+}
+
+export async function getChecklistStats(): Promise<ApiResponse<ChecklistStats>> {
+  return fetchApi<ChecklistStats>(`/debugging-checklists/stats`);
+}
+
+export async function searchChecklistItems(
+  keyword: string,
+  limit = 20
+): Promise<ApiResponse<ChecklistItemWithContext[]>> {
+  const query = buildQueryString({ keyword, limit });
+  return fetchApi<ChecklistItemWithContext[]>(`/debugging-checklists/search${query}`);
+}
+
+export async function getChecklistItemsByErrorPattern(
+  patternId: number
+): Promise<ApiResponse<ChecklistItemWithContext[]>> {
+  return fetchApi<ChecklistItemWithContext[]>(`/debugging-checklists/by-error-pattern/${patternId}`);
 }

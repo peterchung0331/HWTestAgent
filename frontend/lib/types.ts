@@ -180,3 +180,83 @@ export interface TestStatistics {
   auto_fixed_count: number;
   by_environment: Record<string, number>;
 }
+
+// ============================================
+// Debugging Checklist Types
+// ============================================
+
+export type ChecklistCategory = 'sso' | 'docker' | 'database' | 'nginx' | 'api' | 'build' | 'git';
+export type ChecklistScope = 'implementation' | 'debugging' | 'both';
+export type ItemSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface DebuggingChecklist {
+  id: number;
+  category: ChecklistCategory;
+  title: string;
+  description?: string;
+  scope: ChecklistScope;
+  applicable_projects?: string[];
+  priority: number;
+  version: string;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ChecklistItem {
+  id: number;
+  checklist_id: number;
+  item_order: number;
+  title: string;
+  description?: string;
+  severity: ItemSeverity;
+  code_example?: string;
+  anti_pattern?: string;
+  related_error_pattern_ids?: number[];
+  reference_docs?: string[];
+  keywords?: string[];
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ChecklistWithItems extends DebuggingChecklist {
+  items: ChecklistItem[];
+}
+
+export interface ChecklistSummary {
+  id: number;
+  category: ChecklistCategory;
+  title: string;
+  description?: string;
+  scope: ChecklistScope;
+  applicable_projects?: string[];
+  priority: number;
+  version: string;
+  is_active: boolean;
+  item_count: number;
+  critical_count: number;
+  high_count: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ChecklistItemWithContext extends ChecklistItem {
+  checklist_title: string;
+  checklist_category: string;
+}
+
+export interface ChecklistFilters {
+  category?: ChecklistCategory;
+  scope?: ChecklistScope;
+  project?: string;
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ChecklistStats {
+  total_checklists: number;
+  total_items: number;
+  by_category: Record<string, number>;
+  by_severity: Record<string, number>;
+}

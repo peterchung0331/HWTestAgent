@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FlaskConical, AlertTriangle, ClipboardList, FileText, BarChart3 } from 'lucide-react';
+import { FlaskConical, AlertTriangle, ClipboardList, FileText, BarChart3, CheckCircle2 } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: '대시보드', icon: BarChart3 },
   { href: '/error-patterns', label: '에러 패턴', icon: AlertTriangle },
+  { href: '/debugging-checklists', label: '체크리스트', icon: CheckCircle2 },
   { href: '/test-results', label: '테스트 결과', icon: ClipboardList },
   { href: '/templates', label: '템플릿', icon: FileText },
 ];
