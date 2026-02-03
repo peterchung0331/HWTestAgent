@@ -974,4 +974,86 @@ router.delete('/debugging-checklists/:id/items/:itemId', async (req: Request, re
   }
 });
 
+// ============================================
+// Reno AI Bot Test Routes
+// ============================================
+
+/**
+ * GET /api/reno/scenarios
+ * List available Reno test scenarios
+ */
+router.get('/reno/scenarios', authenticateApiKey, async (req: Request, res: Response) => {
+  try {
+    const { ScenarioLoader } = await import('../../runner/scenarios/ScenarioLoader.js');
+    const loader = new ScenarioLoader();
+
+    const scenarios = loader.listScenarios('wbsaleshub')
+      .filter(s => s.startsWith('reno-'));
+
+    res.json({
+      success: true,
+      scenarios: scenarios.map(slug => ({
+        slug,
+        type: 'RENO_AI',
+        project: 'wbsaleshub'
+      }))
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/reno/results/:stepId/details
+ * Get Reno test details for a test step
+ */
+router.get('/reno/results/:stepId/details', authenticateApiKey, async (req: Request, res: Response) => {
+  try {
+    const { stepId } = req.params;
+
+    const details = await TestRepository.getRenoTestDetailsByStepId(parseInt(stepId));
+
+    res.json({
+      success: true,
+      details
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/reno/low-scoring
+ * Get low scoring Reno test cases for analysis
+ */
+router.get('/reno/low-scoring', authenticateApiKey, async (req: Request, res: Response) => {
+  try {
+    const threshold = parseFloat(req.query.threshold as string) || 0.5;
+    const limit = parseInt(req.query.limit as string) || 20;
+
+    const results = await TestRepository.getLowScoringRenoTests(threshold, limit);
+
+    res.json({
+      success: true,
+      count: results.length,
+      threshold,
+      results
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 export default router;

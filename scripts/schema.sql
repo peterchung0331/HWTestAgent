@@ -275,3 +275,47 @@ COMMENT ON TABLE scenarios IS 'Test scenario definitions';
 COMMENT ON TABLE scenario_metrics IS 'Scenario utility analysis metrics';
 COMMENT ON TABLE scenario_archive IS 'Archive of deleted scenarios for restoration';
 COMMENT ON TABLE scenario_improvements IS 'History of automated scenario improvements';
+
+-- ============================================
+-- Reno AI Bot Test Details
+-- ============================================
+
+-- Reno 테스트 상세 결과 테이블
+CREATE TABLE IF NOT EXISTS reno_test_details (
+  id SERIAL PRIMARY KEY,
+  test_step_id INTEGER REFERENCES test_steps(id) ON DELETE CASCADE,
+  test_case_id VARCHAR(100) NOT NULL,       -- WBSalesHub 테스트케이스 ID
+  test_case_name VARCHAR(200),
+
+  -- 입출력
+  input_message TEXT NOT NULL,
+  actual_response TEXT,
+
+  -- 도구 호출 정보
+  tool_calls JSONB,                          -- [{name, input, output, timestamp}]
+
+  -- 평가 점수
+  overall_score DECIMAL(5,4),                -- 0.0000 ~ 1.0000
+
+  -- 도구 평가 상세
+  tool_evaluation JSONB,                     -- {passed, expectedTools, actualTools, ...}
+
+  -- 응답 평가 상세
+  response_evaluation JSONB,                 -- {passed, conceptCoverage, foundConcepts, ...}
+
+  -- 개선 제안
+  suggestions TEXT[],
+
+  -- 에러 정보
+  error_message TEXT,
+
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Reno 테스트 인덱스
+CREATE INDEX idx_reno_test_details_step ON reno_test_details(test_step_id);
+CREATE INDEX idx_reno_test_details_case ON reno_test_details(test_case_id);
+CREATE INDEX idx_reno_test_details_score ON reno_test_details(overall_score);
+CREATE INDEX idx_reno_test_details_created ON reno_test_details(created_at DESC);
+
+COMMENT ON TABLE reno_test_details IS 'Reno AI bot test case details from WBSalesHub';

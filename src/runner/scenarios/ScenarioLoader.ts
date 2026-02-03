@@ -7,18 +7,27 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
 import { HttpTestStep } from '../adapters/HttpAdapter.js';
+import { RenoTestStep } from '../adapters/RenoAdapter.js';
+
+// 통합 테스트 스텝 타입
+export type TestStep = HttpTestStep | RenoTestStep;
 
 export interface Scenario {
   name: string;
   slug: string;
   description: string;
-  type: 'PRECISION' | 'SSO' | 'API' | 'E2E';
+  type: 'PRECISION' | 'SSO' | 'API' | 'E2E' | 'RENO_AI';
   environment: 'production' | 'staging' | 'local';
   schedule?: string;
   timeout: number;
   notify_on: string[];
   variables: Record<string, string>;
-  steps: HttpTestStep[];
+  steps: TestStep[];
+  // Reno AI 전용 설정
+  reno_config?: {
+    base_url?: string;  // WBSalesHub URL (기본값 환경변수)
+    pass_threshold?: number;  // 전체 통과율 기준
+  };
 }
 
 export class ScenarioLoader {
@@ -75,13 +84,28 @@ export class ScenarioLoader {
   /**
    * Parse a single test step
    */
-  private parseStep(step: any, index: number): HttpTestStep {
+  private parseStep(step: any, index: number): TestStep {
     if (!step.name) {
       throw new Error(`Step ${index} must have a name`);
     }
 
+    // Reno AI 타입 지원
+    if (step.type === 'reno') {
+      if (!step.scenario_ref) {
+        throw new Error(`Reno step ${index} must have scenario_ref`);
+      }
+      return {
+        name: step.name,
+        type: 'reno',
+        scenario_ref: step.scenario_ref,
+        pass_threshold: step.pass_threshold,
+        timeout: step.timeout
+      } as RenoTestStep;
+    }
+
+    // HTTP 타입 (기본)
     if (step.type !== 'http') {
-      throw new Error(`Only 'http' type is supported, got: ${step.type}`);
+      throw new Error(`Unsupported step type: ${step.type}. Supported: 'http', 'reno'`);
     }
 
     return {
@@ -94,7 +118,7 @@ export class ScenarioLoader {
       expect: step.expect || {},
       timeout: step.timeout,
       save: step.save
-    };
+    } as HttpTestStep;
   }
 
   /**

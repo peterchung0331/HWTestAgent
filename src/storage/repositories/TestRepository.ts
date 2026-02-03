@@ -251,6 +251,133 @@ export class TestRepository {
       total_auto_fixes: 0
     };
   }
+  // ============================================
+  // Reno Test Details
+  // ============================================
+
+  /**
+   * Create Reno test detail record
+   */
+  async createRenoTestDetail(input: {
+    test_step_id: number;
+    test_case_id: string;
+    test_case_name?: string;
+    input_message: string;
+    actual_response?: string;
+    tool_calls?: any[];
+    overall_score?: number;
+    tool_evaluation?: any;
+    response_evaluation?: any;
+    suggestions?: string[];
+    error_message?: string;
+  }): Promise<any> {
+    const result = await query(`
+      INSERT INTO reno_test_details (
+        test_step_id,
+        test_case_id,
+        test_case_name,
+        input_message,
+        actual_response,
+        tool_calls,
+        overall_score,
+        tool_evaluation,
+        response_evaluation,
+        suggestions,
+        error_message
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING *
+    `, [
+      input.test_step_id,
+      input.test_case_id,
+      input.test_case_name || null,
+      input.input_message,
+      input.actual_response || null,
+      input.tool_calls ? JSON.stringify(input.tool_calls) : null,
+      input.overall_score || null,
+      input.tool_evaluation ? JSON.stringify(input.tool_evaluation) : null,
+      input.response_evaluation ? JSON.stringify(input.response_evaluation) : null,
+      input.suggestions || null,
+      input.error_message || null
+    ]);
+
+    return result.rows[0];
+  }
+
+  /**
+   * Bulk create Reno test details from a test report
+   */
+  async createRenoTestDetailsFromReport(
+    testStepId: number,
+    results: Array<{
+      testCaseId: string;
+      testCaseName?: string;
+      input: string;
+      actualResponse: string;
+      toolCalls: any[];
+      evaluation: {
+        overallScore: number;
+        toolEvaluation: any;
+        responseEvaluation: any;
+      };
+      suggestions?: string[];
+      error?: string;
+    }>
+  ): Promise<number> {
+    let created = 0;
+
+    for (const result of results) {
+      await this.createRenoTestDetail({
+        test_step_id: testStepId,
+        test_case_id: result.testCaseId,
+        test_case_name: result.testCaseName,
+        input_message: result.input,
+        actual_response: result.actualResponse,
+        tool_calls: result.toolCalls,
+        overall_score: result.evaluation.overallScore,
+        tool_evaluation: result.evaluation.toolEvaluation,
+        response_evaluation: result.evaluation.responseEvaluation,
+        suggestions: result.suggestions,
+        error_message: result.error
+      });
+      created++;
+    }
+
+    return created;
+  }
+
+  /**
+   * Get Reno test details by step ID
+   */
+  async getRenoTestDetailsByStepId(stepId: number): Promise<any[]> {
+    const result = await query(`
+      SELECT * FROM reno_test_details
+      WHERE test_step_id = $1
+      ORDER BY id ASC
+    `, [stepId]);
+
+    return result.rows;
+  }
+
+  /**
+   * Get low scoring Reno test cases for analysis
+   */
+  async getLowScoringRenoTests(threshold: number = 0.5, limit: number = 20): Promise<any[]> {
+    const result = await query(`
+      SELECT
+        rtd.*,
+        ts.name as step_name,
+        tr.project_name,
+        tr.scenario_slug
+      FROM reno_test_details rtd
+      JOIN test_steps ts ON rtd.test_step_id = ts.id
+      JOIN test_runs tr ON ts.test_run_id = tr.id
+      WHERE rtd.overall_score < $1
+      ORDER BY rtd.created_at DESC
+      LIMIT $2
+    `, [threshold, limit]);
+
+    return result.rows;
+  }
 }
 
 export default new TestRepository();

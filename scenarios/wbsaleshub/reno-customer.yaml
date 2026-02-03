@@ -1,0 +1,24 @@
+# Reno Bot - 고객 조회 테스트
+name: "Reno Bot - Customer Query"
+slug: reno-customer
+description: "레노봇 고객 조회 기능 자동화 테스트 (WBSalesHub 연동)"
+type: RENO_AI
+environment: staging
+timeout: 600000  # 10분
+notify_on:
+  - failure
+  - error
+
+variables:
+  WBSALESHUB_URL: "{{WBSALESHUB_URL}}"
+
+reno_config:
+  base_url: "{{WBSALESHUB_URL}}"
+  pass_threshold: 0.6
+
+steps:
+  - name: "고객 조회 시나리오 실행"
+    type: reno
+    scenario_ref: customer-query
+    pass_threshold: 0.6
+    timeout: 300000

@@ -4,10 +4,11 @@
  */
 
 import { HttpAdapter, HttpTestStep, HttpTestResult } from './adapters/HttpAdapter.js';
-import { ScenarioLoader, Scenario } from './scenarios/ScenarioLoader.js';
+import { RenoAdapter, RenoTestStep, RenoTestStepResult } from './adapters/RenoAdapter.js';
+import { ScenarioLoader, Scenario, TestStep } from './scenarios/ScenarioLoader.js';
 import TestRepository from '../storage/repositories/TestRepository.js';
 import { TestRun, Environment, TriggerSource, TestRunStatus } from '../storage/models/TestRun.js';
-import { TestStep } from '../storage/models/TestStep.js';
+import { TestStep as TestStepModel } from '../storage/models/TestStep.js';
 
 export interface RunOptions {
   project: string;
@@ -19,6 +20,9 @@ export interface RunOptions {
   stop_on_failure?: boolean;
 }
 
+// 통합 테스트 결과 타입
+export type StepResult = HttpTestResult | RenoTestStepResult;
+
 export interface TestRunResult {
   test_run_id: number;
   status: TestRunStatus;
@@ -28,17 +32,46 @@ export interface TestRunResult {
   auto_fixed_count: number;
   retry_count: number;
   duration_ms: number;
-  steps: HttpTestResult[];
+  steps: StepResult[];
 }
 
 export class TestRunner {
   private scenarioLoader: ScenarioLoader;
   private httpAdapter: HttpAdapter;
+  private renoAdapter: RenoAdapter | null = null;
   private autoFixer: any; // Will be implemented later
 
   constructor() {
     this.scenarioLoader = new ScenarioLoader();
     this.httpAdapter = new HttpAdapter();
+  }
+
+  /**
+   * Initialize Reno adapter for RENO_AI scenarios
+   */
+  private initRenoAdapter(scenario: Scenario): void {
+    const baseUrl = scenario.reno_config?.base_url
+      || process.env.WBSALESHUB_URL
+      || 'http://localhost:4010';
+
+    this.renoAdapter = new RenoAdapter({
+      baseUrl,
+      verbose: process.env.VERBOSE === 'true'
+    });
+  }
+
+  /**
+   * Execute a single test step based on type
+   */
+  private async executeStep(step: TestStep, scenario: Scenario): Promise<StepResult> {
+    if (step.type === 'reno') {
+      if (!this.renoAdapter) {
+        this.initRenoAdapter(scenario);
+      }
+      return this.renoAdapter!.executeStep(step as RenoTestStep);
+    }
+
+    return this.httpAdapter.executeStep(step as HttpTestStep);
   }
 
   /**
@@ -76,7 +109,7 @@ export class TestRunner {
       console.log(`📝 Test run created: ID=${testRun.id}\n`);
 
       // Execute steps
-      const results: HttpTestResult[] = [];
+      const results: StepResult[] = [];
       let passed_steps = 0;
       let failed_steps = 0;
       let auto_fixed_count = 0;
@@ -88,7 +121,7 @@ export class TestRunner {
         console.log(`📍 Step ${i + 1}/${scenario.steps.length}: ${step.name}`);
         console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
-        let stepResult = await this.httpAdapter.executeStep(step);
+        let stepResult = await this.executeStep(step, scenario);
 
         // Auto-fix if failed
         if (stepResult.status === 'FAILED' && (options.auto_fix ?? true)) {
@@ -103,7 +136,7 @@ export class TestRunner {
             // For now, we'll just retry once
             await this.wait(2000); // Wait 2 seconds before retry
 
-            stepResult = await this.httpAdapter.executeStep(step);
+            stepResult = await this.executeStep(step, scenario);
             retry_count++;
 
             if (stepResult.status !== 'FAILED') {
@@ -115,7 +148,7 @@ export class TestRunner {
         }
 
         // Save step result
-        await TestRepository.createTestStep({
+        const savedStep = await TestRepository.createTestStep({
           test_run_id: testRun.id,
           name: step.name,
           step_order: i + 1,
@@ -128,6 +161,16 @@ export class TestRunner {
           auto_fixed: auto_fixed_count > 0 && stepResult.status === 'PASSED',
           retry_attempt: retry_count
         });
+
+        // Save Reno test details if this is a Reno step
+        if (step.type === 'reno' && (stepResult as RenoTestStepResult).response_data?.results) {
+          const renoResult = stepResult as RenoTestStepResult;
+          await TestRepository.createRenoTestDetailsFromReport(
+            savedStep.id,
+            renoResult.response_data!.results
+          );
+          console.log(`   📊 Saved ${renoResult.response_data!.results.length} Reno test details`);
+        }
 
         results.push(stepResult);
 

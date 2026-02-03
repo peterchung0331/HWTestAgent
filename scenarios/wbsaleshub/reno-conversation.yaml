@@ -1,0 +1,24 @@
+# Reno Bot - 멀티턴 대화 테스트
+name: "Reno Bot - Multi-turn Conversation"
+slug: reno-conversation
+description: "레노봇 멀티턴 대화 기능 자동화 테스트"
+type: RENO_AI
+environment: staging
+timeout: 900000  # 15분 (대화 시나리오는 더 오래 걸림)
+notify_on:
+  - failure
+  - error
+
+variables:
+  WBSALESHUB_URL: "{{WBSALESHUB_URL}}"
+
+reno_config:
+  base_url: "{{WBSALESHUB_URL}}"
+  pass_threshold: 0.5  # 멀티턴은 통과율 기준 완화
+
+steps:
+  - name: "멀티턴 대화 시나리오 실행"
+    type: reno
+    scenario_ref: multi-turn
+    pass_threshold: 0.5
+    timeout: 300000
