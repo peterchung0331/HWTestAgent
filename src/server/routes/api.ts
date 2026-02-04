@@ -9,12 +9,9 @@ import { Environment, TriggerSource } from '../../storage/models/TestRun.js';
 import TestRepository from '../../storage/repositories/TestRepository.js';
 import SlackNotifier from '../../notification/SlackNotifier.js';
 import { authenticateApiKey } from '../middleware/auth.js';
-import { ScenarioLoader } from '../../runner/scenarios/ScenarioLoader.js';
-import errorPatternsRouter from './errorPatterns.js';
 
 const router: Router = express.Router();
 const testRunner = new TestRunner();
-const scenarioLoader = new ScenarioLoader();
 
 /**
  * POST /api/test/run
@@ -210,49 +207,319 @@ router.get('/test/stats/:project', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/scenarios
- * Get all available test scenarios
+ * GET /api/error-patterns
+ * Get error patterns with filters
  */
-router.get('/scenarios', async (req: Request, res: Response) => {
+router.get('/error-patterns', async (req: Request, res: Response) => {
   try {
-    const projects = ['wbhubmanager', 'wbsaleshub', 'wbfinhub', 'wbonboardinghub'];
-    const scenarios: any[] = [];
+    const { project, category, query, limit, offset } = req.query;
 
-    for (const project of projects) {
-      const scenarioSlugs = scenarioLoader.listScenarios(project);
+    const ErrorPatternRepository = (await import('../../storage/repositories/ErrorPatternRepository.js')).default;
 
-      for (const slug of scenarioSlugs) {
-        try {
-          const scenario = scenarioLoader.loadScenario(project, slug);
-          scenarios.push({
-            project,
-            slug: scenario.slug,
-            name: scenario.name,
-            description: scenario.description,
-            type: scenario.type,
-            priority: scenario.priority,
-            environment: scenario.environment,
-            schedule: scenario.schedule,
-            steps: scenario.steps.map(step => ({
-              name: step.name,
-              type: step.type,
-              method: step.method,
-              url: step.url,
-              timeout: step.timeout
-            })),
-            stepCount: scenario.steps.length
-          });
-        } catch (error) {
-          console.warn(`Could not load scenario ${project}/${slug}:`, error);
-        }
-      }
+    const patterns = await ErrorPatternRepository.searchErrorPatterns({
+      project: project as string,
+      category: category as string,
+      query: query as string,
+      limit: limit ? parseInt(limit as string) : 20,
+      offset: offset ? parseInt(offset as string) : 0
+    });
+
+    res.json({
+      success: true,
+      data: patterns
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/error-patterns/:id
+ * Get error pattern by ID with solutions
+ */
+router.get('/error-patterns/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const ErrorSearchService = (await import('../../services/errorSearch.service.js')).default;
+
+    const result = await ErrorSearchService.getErrorPatternWithSolutions(parseInt(id));
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/error-patterns/record
+ * Record error occurrence
+ */
+router.post('/error-patterns/record', async (req: Request, res: Response) => {
+  try {
+    const ErrorSearchService = (await import('../../services/errorSearch.service.js')).default;
+
+    const result = await ErrorSearchService.recordErrorOccurrence(req.body);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/error-patterns/:id/solutions
+ * Add solution to an error pattern
+ */
+router.post('/error-patterns/:id/solutions', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      solution_title,
+      solution_description,
+      solution_steps,
+      files_modified,
+      code_snippets,
+      reference_docs,
+      related_commit_hash,
+      work_log_path
+    } = req.body;
+
+    if (!solution_title || !solution_description || !solution_steps) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: solution_title, solution_description, solution_steps'
+      });
+      return;
+    }
+
+    const ErrorPatternRepository = (await import('../../storage/repositories/ErrorPatternRepository.js')).default;
+
+    const solution = await ErrorPatternRepository.createErrorSolution({
+      error_pattern_id: parseInt(id),
+      solution_title,
+      solution_description,
+      solution_steps,
+      files_modified,
+      code_snippets,
+      reference_docs,
+      related_commit_hash,
+      work_log_path
+    });
+
+    res.json({
+      success: true,
+      data: solution
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/error-patterns/stats
+ * Get error pattern statistics
+ */
+router.get('/error-patterns/stats', async (req: Request, res: Response) => {
+  try {
+    const { project } = req.query;
+
+    const ErrorSearchService = (await import('../../services/errorSearch.service.js')).default;
+
+    const stats = await ErrorSearchService.getErrorPatternStats(project as string);
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/templates
+ * Get test script templates
+ */
+router.get('/templates', async (req: Request, res: Response) => {
+  try {
+    const { type, tags } = req.query;
+
+    const TemplateRepository = (await import('../../storage/repositories/TemplateRepository.js')).default;
+
+    const templates = await TemplateRepository.searchTemplates({
+      type: type as any,
+      tags: tags ? (Array.isArray(tags) ? tags as string[] : [tags as string]) : undefined,
+      limit: 100
+    });
+
+    res.json({
+      success: true,
+      data: templates
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/templates/:id
+ * Get template by ID
+ */
+router.get('/templates/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const TemplateRepository = (await import('../../storage/repositories/TemplateRepository.js')).default;
+
+    const template = await TemplateRepository.getTemplateById(parseInt(id));
+
+    if (!template) {
+      res.status(404).json({
+        success: false,
+        error: 'Template not found'
+      });
+      return;
     }
 
     res.json({
       success: true,
-      data: scenarios
+      data: template
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/templates/:id/generate
+ * Generate script from template
+ */
+router.post('/templates/:id/generate', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { variables } = req.body;
+
+    const TemplateEngineService = (await import('../../services/templateEngine.service.js')).default;
+
+    const result = await TemplateEngineService.generateScript({
+      template_id: parseInt(id),
+      variables
     });
 
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/error-patterns/batch-record
+ * Batch record multiple errors
+ */
+router.post('/error-patterns/batch-record', async (req: Request, res: Response) => {
+  try {
+    const { errors } = req.body;
+
+    if (!Array.isArray(errors)) {
+      res.status(400).json({
+        success: false,
+        error: 'errors must be an array'
+      });
+      return;
+    }
+
+    if (errors.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'errors array cannot be empty'
+      });
+      return;
+    }
+
+    if (errors.length > 100) {
+      res.status(400).json({
+        success: false,
+        error: 'Maximum 100 errors per batch'
+      });
+      return;
+    }
+
+    const ErrorPatternRepository = (await import('../../storage/repositories/ErrorPatternRepository.js')).default;
+
+    const result = await ErrorPatternRepository.batchRecordErrors(errors);
+
+    res.json({
+      success: true,
+      data: {
+        patterns_count: result.patterns.length,
+        occurrences_count: result.occurrences.length
+      }
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/background-queue/status
+ * Get background queue status
+ */
+router.get('/background-queue/status', async (req: Request, res: Response) => {
+  try {
+    const BackgroundQueueService = (await import('../../services/backgroundQueue.service.js')).default;
+
+    const status = BackgroundQueueService.getStatus();
+
+    res.json({
+      success: true,
+      data: status
+    });
   } catch (error) {
     console.error('❌ API error:', error);
     res.status(500).json({
@@ -277,7 +544,516 @@ router.get('/health', async (req: Request, res: Response) => {
   });
 });
 
-// Error Pattern Routes
-router.use('/', errorPatternsRouter);
+// ============================================
+// Debugging Checklists API
+// ============================================
+
+/**
+ * GET /api/debugging-checklists
+ * Get checklists with summary
+ */
+router.get('/debugging-checklists', async (req: Request, res: Response) => {
+  try {
+    const { category, scope, project, query: searchQuery, limit, offset } = req.query;
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const checklists = await ChecklistRepository.getChecklistsSummary({
+      category: category as any,
+      scope: scope as any,
+      project: project as string,
+      query: searchQuery as string,
+      limit: limit ? parseInt(limit as string) : undefined,
+      offset: offset ? parseInt(offset as string) : undefined
+    });
+
+    res.json({
+      success: true,
+      data: checklists
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/debugging-checklists/categories
+ * Get available categories
+ */
+router.get('/debugging-checklists/categories', async (req: Request, res: Response) => {
+  try {
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const categories = await ChecklistRepository.getCategories();
+
+    res.json({
+      success: true,
+      data: categories
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/debugging-checklists/stats
+ * Get checklist statistics
+ */
+router.get('/debugging-checklists/stats', async (req: Request, res: Response) => {
+  try {
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const stats = await ChecklistRepository.getChecklistStats();
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/debugging-checklists/search
+ * Search checklist items by keyword
+ */
+router.get('/debugging-checklists/search', async (req: Request, res: Response) => {
+  try {
+    const { keyword, limit } = req.query;
+
+    if (!keyword) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required parameter: keyword'
+      });
+      return;
+    }
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const items = await ChecklistRepository.searchItemsByKeyword(
+      keyword as string,
+      limit ? parseInt(limit as string) : 20
+    );
+
+    res.json({
+      success: true,
+      data: items
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/debugging-checklists/by-error-pattern/:patternId
+ * Get checklist items linked to an error pattern
+ */
+router.get('/debugging-checklists/by-error-pattern/:patternId', async (req: Request, res: Response) => {
+  try {
+    const { patternId } = req.params;
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const items = await ChecklistRepository.getItemsByErrorPatternId(parseInt(patternId));
+
+    res.json({
+      success: true,
+      data: items
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/debugging-checklists/category/:category
+ * Get all checklists in a category with items
+ */
+router.get('/debugging-checklists/category/:category', async (req: Request, res: Response) => {
+  try {
+    const { category } = req.params;
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const checklists = await ChecklistRepository.getChecklistsByCategory(category as any);
+
+    res.json({
+      success: true,
+      data: checklists
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/debugging-checklists/:id
+ * Get checklist with items by ID
+ */
+router.get('/debugging-checklists/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const checklist = await ChecklistRepository.getChecklistWithItems(parseInt(id));
+
+    if (!checklist) {
+      res.status(404).json({
+        success: false,
+        error: 'Checklist not found'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: checklist
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/debugging-checklists
+ * Create a new checklist
+ */
+router.post('/debugging-checklists', async (req: Request, res: Response) => {
+  try {
+    const { category, title, description, scope, applicable_projects, priority, version } = req.body;
+
+    if (!category || !title) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: category, title'
+      });
+      return;
+    }
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const checklist = await ChecklistRepository.createChecklist({
+      category,
+      title,
+      description,
+      scope,
+      applicable_projects,
+      priority,
+      version
+    });
+
+    res.json({
+      success: true,
+      data: checklist
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * PUT /api/debugging-checklists/:id
+ * Update a checklist
+ */
+router.put('/debugging-checklists/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const checklist = await ChecklistRepository.updateChecklist(parseInt(id), req.body);
+
+    if (!checklist) {
+      res.status(404).json({
+        success: false,
+        error: 'Checklist not found'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: checklist
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * DELETE /api/debugging-checklists/:id
+ * Delete a checklist (soft delete)
+ */
+router.delete('/debugging-checklists/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { hard } = req.query;
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const success = await ChecklistRepository.deleteChecklist(parseInt(id), hard === 'true');
+
+    if (!success) {
+      res.status(404).json({
+        success: false,
+        error: 'Checklist not found'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Checklist deleted successfully'
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/debugging-checklists/:id/items
+ * Add an item to a checklist
+ */
+router.post('/debugging-checklists/:id/items', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      item_order,
+      title,
+      description,
+      severity,
+      code_example,
+      anti_pattern,
+      related_error_pattern_ids,
+      reference_docs,
+      keywords
+    } = req.body;
+
+    if (!item_order || !title) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: item_order, title'
+      });
+      return;
+    }
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const item = await ChecklistRepository.createChecklistItem({
+      checklist_id: parseInt(id),
+      item_order,
+      title,
+      description,
+      severity,
+      code_example,
+      anti_pattern,
+      related_error_pattern_ids,
+      reference_docs,
+      keywords
+    });
+
+    res.json({
+      success: true,
+      data: item
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * PUT /api/debugging-checklists/:id/items/:itemId
+ * Update a checklist item
+ */
+router.put('/debugging-checklists/:id/items/:itemId', async (req: Request, res: Response) => {
+  try {
+    const { itemId } = req.params;
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const item = await ChecklistRepository.updateChecklistItem(parseInt(itemId), req.body);
+
+    if (!item) {
+      res.status(404).json({
+        success: false,
+        error: 'Checklist item not found'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: item
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * DELETE /api/debugging-checklists/:id/items/:itemId
+ * Delete a checklist item
+ */
+router.delete('/debugging-checklists/:id/items/:itemId', async (req: Request, res: Response) => {
+  try {
+    const { itemId } = req.params;
+
+    const ChecklistRepository = (await import('../../storage/repositories/ChecklistRepository.js')).default;
+
+    const success = await ChecklistRepository.deleteChecklistItem(parseInt(itemId));
+
+    if (!success) {
+      res.status(404).json({
+        success: false,
+        error: 'Checklist item not found'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Checklist item deleted successfully'
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// ============================================
+// Reno AI Bot Test Routes
+// ============================================
+
+/**
+ * GET /api/reno/scenarios
+ * List available Reno test scenarios
+ */
+router.get('/reno/scenarios', authenticateApiKey, async (req: Request, res: Response) => {
+  try {
+    const { ScenarioLoader } = await import('../../runner/scenarios/ScenarioLoader.js');
+    const loader = new ScenarioLoader();
+
+    const scenarios = loader.listScenarios('wbsaleshub')
+      .filter(s => s.startsWith('reno-'));
+
+    res.json({
+      success: true,
+      scenarios: scenarios.map(slug => ({
+        slug,
+        type: 'RENO_AI',
+        project: 'wbsaleshub'
+      }))
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/reno/results/:stepId/details
+ * Get Reno test details for a test step
+ */
+router.get('/reno/results/:stepId/details', authenticateApiKey, async (req: Request, res: Response) => {
+  try {
+    const { stepId } = req.params;
+
+    const details = await TestRepository.getRenoTestDetailsByStepId(parseInt(stepId));
+
+    res.json({
+      success: true,
+      details
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/reno/low-scoring
+ * Get low scoring Reno test cases for analysis
+ */
+router.get('/reno/low-scoring', authenticateApiKey, async (req: Request, res: Response) => {
+  try {
+    const threshold = parseFloat(req.query.threshold as string) || 0.5;
+    const limit = parseInt(req.query.limit as string) || 20;
+
+    const results = await TestRepository.getLowScoringRenoTests(threshold, limit);
+
+    res.json({
+      success: true,
+      count: results.length,
+      threshold,
+      results
+    });
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
 
 export default router;

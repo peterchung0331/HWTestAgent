@@ -236,3 +236,57 @@ export async function getErrorSolutions(errorPatternId: number): Promise<any[]> 
     return [];
   }
 }
+
+/**
+ * 여러 에러를 배치로 기록합니다.
+ *
+ * @param errors 에러 목록 (최대 100개)
+ * @returns 생성된 패턴 수와 발생 수
+ */
+export async function reportErrorsBatch(errors: ErrorReportInput[]): Promise<{
+  patterns_count: number;
+  occurrences_count: number;
+} | null> {
+  try {
+    if (errors.length === 0) {
+      console.warn('⚠️ 기록할 에러가 없습니다');
+      return null;
+    }
+
+    if (errors.length > 100) {
+      console.warn('⚠️ 최대 100개까지만 배치 기록 가능합니다. 처음 100개만 처리합니다.');
+      errors = errors.slice(0, 100);
+    }
+
+    // 에러 해시 생성
+    const batchErrors = errors.map(error => ({
+      project_name: error.project_name,
+      error_hash: crypto
+        .createHash('md5')
+        .update(`${error.project_name}:${error.error_message}`)
+        .digest('hex'),
+      error_message: error.error_message,
+      error_category: error.error_category || 'UNKNOWN',
+      environment: error.environment,
+      stack_trace: error.stack_trace,
+      context_info: error.context_info,
+      test_run_id: error.test_run_id,
+    }));
+
+    const response = await axios.post(`${API_BASE_URL}/error-patterns/batch-record`, {
+      errors: batchErrors,
+    });
+
+    if (response.data.success && response.data.data) {
+      console.log(
+        `✅ ${errors.length}개 에러가 DB에 배치 기록되었습니다 (패턴: ${response.data.data.patterns_count}개, 발생: ${response.data.data.occurrences_count}개)`
+      );
+      return response.data.data;
+    }
+
+    return null;
+  } catch (err) {
+    console.error('❌ 배치 에러 기록 실패:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
