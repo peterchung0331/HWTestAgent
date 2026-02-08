@@ -1,0 +1,384 @@
+# WBSalesHub 미팅노트 API 통합 테스트 시나리오
+# 생성일: 2026-01-24
+# 테스트 대상: /api/meeting-notes 관련 전체 API
+
+name: "미팅노트 API 통합 테스트"
+slug: "meeting-notes-integration"
+description: "미팅노트 CRUD, 필터링, 권한, AI 기능 전체 테스트"
+type: INTEGRATION
+environment: development
+timeout: 120000  # 2분
+retries: 3
+
+variables:
+  BASE_URL: "http://localhost:4010"
+  # 개발 모드에서 AUTH_ENABLED=false 시 DEV_USER 자동 사용
+  # DEV_USER: peter.chung@wavebridge.com (ADMIN)
+
+# ==============================================
+# Phase 1: 기본 CRUD 테스트
+# ==============================================
+steps:
+  # ------------------------------------------
+  # 1. 미팅노트 생성 - 성공
+  # ------------------------------------------
+  - id: create-meeting-note
+    name: "미팅노트 생성"
+    priority: critical
+    request:
+      method: POST
+      url: "{{BASE_URL}}/api/meeting-notes"
+      headers:
+        Content-Type: "application/json"
+      body:
+        client_name: "테스트 고객사 Alpha"
+        content: "통합 테스트용 미팅 노트입니다. 제품 데모 및 가격 협상 진행."
+        attendees: ["김철수", "이영희", "박민수"]
+        source: "MANUAL"
+        is_private: false
+      timeout: 10000
+    expected:
+      status: 201
+      body:
+        success: true
+        hasKey: "data"
+        data:
+          hasKey: "id"
+          client_name: "테스트 고객사 Alpha"
+          source: "MANUAL"
+          is_private: false
+          is_deleted: false
+    save:
+      CREATED_NOTE_ID: "$.data.id"
+
+  # ------------------------------------------
+  # 2. 미팅노트 생성 - 필수 필드 누락 (client_name)
+  # ------------------------------------------
+  - id: create-missing-client-name
+    name: "생성 실패 - 고객사명 누락"
+    priority: high
+    request:
+      method: POST
+      url: "{{BASE_URL}}/api/meeting-notes"
+      headers:
+        Content-Type: "application/json"
+      body:
+        content: "내용만 있고 고객사명 없음"
+      timeout: 5000
+    expected:
+      status: 400
+      body:
+        success: false
+        error: "고객사명은 필수입니다."
+
+  # ------------------------------------------
+  # 3. 미팅노트 생성 - 필수 필드 누락 (content)
+  # ------------------------------------------
+  - id: create-missing-content
+    name: "생성 실패 - 내용 누락"
+    priority: high
+    request:
+      method: POST
+      url: "{{BASE_URL}}/api/meeting-notes"
+      headers:
+        Content-Type: "application/json"
+      body:
+        client_name: "고객사만 있음"
+      timeout: 5000
+    expected:
+      status: 400
+      body:
+        success: false
+        error: "미팅 내용은 필수입니다."
+
+  # ------------------------------------------
+  # 4. 미팅노트 목록 조회
+  # ------------------------------------------
+  - id: list-meeting-notes
+    name: "미팅노트 목록 조회"
+    priority: critical
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes"
+      timeout: 10000
+    expected:
+      status: 200
+      body:
+        success: true
+        hasKey: "data"
+        data:
+          hasKey: "data"
+          hasKey: "total"
+          hasKey: "page"
+          hasKey: "limit"
+
+  # ------------------------------------------
+  # 5. 특정 미팅노트 조회
+  # ------------------------------------------
+  - id: get-meeting-note-by-id
+    name: "특정 미팅노트 조회"
+    priority: critical
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes/{{CREATED_NOTE_ID}}"
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        success: true
+        data:
+          id: "{{CREATED_NOTE_ID}}"
+          client_name: "테스트 고객사 Alpha"
+
+  # ------------------------------------------
+  # 6. 존재하지 않는 미팅노트 조회
+  # ------------------------------------------
+  - id: get-nonexistent-note
+    name: "존재하지 않는 노트 조회 (404)"
+    priority: medium
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes/00000000-0000-0000-0000-000000000000"
+      timeout: 5000
+    expected:
+      status: 404
+      body:
+        success: false
+        error: "미팅노트를 찾을 수 없습니다."
+
+  # ------------------------------------------
+  # 7. 미팅노트 수정
+  # ------------------------------------------
+  - id: update-meeting-note
+    name: "미팅노트 수정"
+    priority: critical
+    request:
+      method: PUT
+      url: "{{BASE_URL}}/api/meeting-notes/{{CREATED_NOTE_ID}}"
+      headers:
+        Content-Type: "application/json"
+      body:
+        client_name: "테스트 고객사 Alpha (수정됨)"
+        content: "수정된 미팅 내용입니다. 추가 협상 진행."
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        success: true
+        data:
+          client_name: "테스트 고객사 Alpha (수정됨)"
+        message: "미팅노트가 수정되었습니다."
+
+# ==============================================
+# Phase 2: 필터링 및 페이지네이션
+# ==============================================
+
+  # ------------------------------------------
+  # 8. 검색어 필터링
+  # ------------------------------------------
+  - id: filter-by-search
+    name: "검색어 필터링"
+    priority: high
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes?search=테스트"
+      timeout: 10000
+    expected:
+      status: 200
+      body:
+        success: true
+        hasKey: "data"
+
+  # ------------------------------------------
+  # 9. 소스 필터링 (MANUAL)
+  # ------------------------------------------
+  - id: filter-by-source
+    name: "소스 필터링 (MANUAL)"
+    priority: high
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes?source=MANUAL"
+      timeout: 10000
+    expected:
+      status: 200
+      body:
+        success: true
+        hasKey: "data"
+
+  # ------------------------------------------
+  # 10. 페이지네이션
+  # ------------------------------------------
+  - id: pagination
+    name: "페이지네이션 테스트"
+    priority: high
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes?page=1&limit=5"
+      timeout: 10000
+    expected:
+      status: 200
+      body:
+        success: true
+        data:
+          page: 1
+          limit: 5
+
+  # ------------------------------------------
+  # 11. 정렬 테스트
+  # ------------------------------------------
+  - id: sorting
+    name: "정렬 테스트 (created_at desc)"
+    priority: medium
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes?sort_by=created_at&sort_order=desc"
+      timeout: 10000
+    expected:
+      status: 200
+      body:
+        success: true
+        hasKey: "data"
+
+# ==============================================
+# Phase 3: 권한 및 비공개 설정
+# ==============================================
+
+  # ------------------------------------------
+  # 12. 비공개 설정 토글
+  # ------------------------------------------
+  - id: toggle-privacy
+    name: "비공개 설정 토글"
+    priority: high
+    request:
+      method: PATCH
+      url: "{{BASE_URL}}/api/meeting-notes/{{CREATED_NOTE_ID}}/privacy"
+      headers:
+        Content-Type: "application/json"
+      body:
+        is_private: true
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        success: true
+        data:
+          is_private: true
+        message: "미팅노트가 비공개로 설정되었습니다."
+
+  # ------------------------------------------
+  # 13. 비공개 해제
+  # ------------------------------------------
+  - id: toggle-privacy-off
+    name: "비공개 해제"
+    priority: medium
+    request:
+      method: PATCH
+      url: "{{BASE_URL}}/api/meeting-notes/{{CREATED_NOTE_ID}}/privacy"
+      headers:
+        Content-Type: "application/json"
+      body:
+        is_private: false
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        success: true
+        data:
+          is_private: false
+        message: "미팅노트가 공개로 설정되었습니다."
+
+# ==============================================
+# Phase 4: 관리자 전용 기능 (DEV_USER = ADMIN)
+# ==============================================
+
+  # ------------------------------------------
+  # 14. 팀 전체 미팅노트 조회 (관리자)
+  # ------------------------------------------
+  - id: admin-team-notes
+    name: "팀 전체 미팅노트 조회 (ADMIN)"
+    priority: high
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes/team"
+      timeout: 10000
+    expected:
+      status: 200
+      body:
+        success: true
+        hasKey: "data"
+        data:
+          hasKey: "data"
+          hasKey: "total"
+
+  # ------------------------------------------
+  # 15. 팀 통계 조회 (관리자)
+  # ------------------------------------------
+  - id: admin-stats
+    name: "팀 통계 조회 (ADMIN)"
+    priority: high
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes/stats"
+      timeout: 10000
+    expected:
+      status: 200
+      body:
+        success: true
+        hasKey: "data"
+        data:
+          hasKey: "total"
+          hasKey: "bySource"
+          hasKey: "byAuthor"
+
+# ==============================================
+# Phase 5: 정리 (Cleanup)
+# ==============================================
+
+  # ------------------------------------------
+  # 16. 미팅노트 삭제 (soft delete)
+  # ------------------------------------------
+  - id: delete-meeting-note
+    name: "미팅노트 삭제 (soft delete)"
+    priority: critical
+    request:
+      method: DELETE
+      url: "{{BASE_URL}}/api/meeting-notes/{{CREATED_NOTE_ID}}"
+      timeout: 5000
+    expected:
+      status: 200
+      body:
+        success: true
+        message: "미팅노트가 삭제되었습니다."
+
+  # ------------------------------------------
+  # 17. 삭제된 노트 조회 시도 (404)
+  # ------------------------------------------
+  - id: get-deleted-note
+    name: "삭제된 노트 조회 (404)"
+    priority: medium
+    request:
+      method: GET
+      url: "{{BASE_URL}}/api/meeting-notes/{{CREATED_NOTE_ID}}"
+      timeout: 5000
+    expected:
+      status: 404
+      body:
+        success: false
+        error: "미팅노트를 찾을 수 없습니다."
+
+# ==============================================
+# 테스트 메타데이터
+# ==============================================
+metadata:
+  author: "Claude Code"
+  created_at: "2026-01-24"
+  version: "1.0.0"
+  tags:
+    - meeting-notes
+    - crud
+    - integration
+    - api
+  related_files:
+    - "/home/peterchung/WBSalesHub/server/routes/meetingNoteRoutes.ts"
+    - "/home/peterchung/WBSalesHub/server/services/meetingNoteService.ts"
+    - "/home/peterchung/WBSalesHub/server/middleware/auth.ts"

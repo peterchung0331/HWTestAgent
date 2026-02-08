@@ -4,7 +4,7 @@
  */
 
 // 체크리스트 카테고리
-export type ChecklistCategory = 'sso' | 'docker' | 'database' | 'nginx' | 'api' | 'build' | 'git';
+export type ChecklistCategory = 'sso' | 'docker' | 'database' | 'nginx' | 'api' | 'build' | 'git' | 'deployment';
 
 // 체크리스트 적용 범위
 export type ChecklistScope = 'implementation' | 'debugging' | 'both';
