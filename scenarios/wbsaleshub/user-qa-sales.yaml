@@ -1,0 +1,657 @@
+# ================================================================
+# 세일즈허브 유저 QA 테스트
+# ================================================================
+# 대상: SalesHub 고객 관리 전체 워크플로우
+# 관점: 세일즈 담당자 (실제 사용자)
+# 환경: staging (https://staging.workhub.biz:4400/saleshub)
+# 생성: 2026-03-02
+#
+# 워크플로우 목록:
+#   WF-01  직접 신규 고객 등록 (모달)
+#   WF-02  퀵메모 → 신규 고객 자동 등록
+#   WF-03  퀵메모 → 기존 고객 컨텍스트 업데이트
+#   WF-04  고객 상세 페이지 직접 수정
+#   WF-05  미팅 생성 및 노트 관리
+#   WF-06  음성/Fireflies API 구조 확인
+#   WF-07  고객 문서 관리 API 확인
+#   WF-08  Reno AI 고객 컨텍스트 & 활동 관리
+#   WF-09  고객 목록 필터링 & 검색
+#   WF-10  슬랙 채널 보고 → 컨텍스트 수동 반영
+# ================================================================
+
+name: "세일즈허브 유저 QA 테스트"
+slug: "user-qa-sales"
+description: |
+  세일즈 담당자 관점의 전체 고객 관리 워크플로우 QA 테스트.
+  신규 고객 등록 → 정보 수정 → 미팅 관리 → 문서/음성 업로드
+  → 슬랙/리노 연동까지 실제 사용 흐름을 10개 워크플로우,
+  35개 테스트 케이스로 검증한다.
+type: PRECISION
+environment: staging
+timeout: 600000
+notify_on:
+  - failure
+  - recovery
+
+variables:
+  BASE_URL: "https://staging.workhub.biz:4400/saleshub"
+  TEST_EMAIL: "peter.chung@wavebridge.com"
+  TEST_PASSWORD: "wave1234!!"
+  TEST_COMPANY: "QA테스트법인-USER-QA-001"
+
+steps:
+
+  # ================================================================
+  # [인증] 세션 쿠키 획득
+  # ================================================================
+
+  - name: "[AUTH] 로그인 → 세션 쿠키 획득"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/auth/login"
+    headers:
+      Content-Type: "application/json"
+    body:
+      email: "{{TEST_EMAIL}}"
+      password: "{{TEST_PASSWORD}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  - name: "[AUTH] /api/auth/me → 인증 상태 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/auth/me"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  # ================================================================
+  # WF-01: 직접 신규 고객 등록 (고객 생성 모달)
+  # ================================================================
+
+  - name: "[WF-01 TC-01-01] 중복 검사 → 신규 고객 (isDuplicate: false)"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/check-duplicate"
+    headers:
+      Content-Type: "application/json"
+    body:
+      company_name: "{{TEST_COMPANY}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          isDuplicate: false
+    timeout: 5000
+
+  - name: "[WF-01 TC-01-02] 신규 고객 생성 (필수 필드만)"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers"
+    headers:
+      Content-Type: "application/json"
+    body:
+      company_name: "{{TEST_COMPANY}}"
+      entity_type: "법인"
+      sales_stage: "잠재 고객"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@number"
+    save:
+      CUSTOMER_ID_1: "$.data.id"
+    timeout: 10000
+
+  - name: "[WF-01 TC-01-03] 생성된 고객 상세 조회 → 데이터 일치 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          company_name: "{{TEST_COMPANY}}"
+          entity_type: "법인"
+    timeout: 5000
+
+  - name: "[WF-01 TC-01-04] 중복 검사 → 기존 고객 (isDuplicate: true)"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/check-duplicate"
+    headers:
+      Content-Type: "application/json"
+    body:
+      company_name: "{{TEST_COMPANY}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          isDuplicate: true
+    timeout: 5000
+
+  # ================================================================
+  # WF-02: 퀵메모 → 신규 고객 자동 등록
+  # ================================================================
+
+  - name: "[WF-02 TC-02-01] 퀵메모 분석 → 신규 고객 (not_identified)"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/reno/quick-memo/analyze"
+    headers:
+      Content-Type: "application/json"
+    body:
+      text: "알파브릿지투자조합 담당자 김민준 연락처 010-1234-5678 오늘 처음 미팅 예정"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 30000
+
+  - name: "[WF-02 TC-02-02] 퀵메모 → 고객 병합 (CUSTOMER_ID_1 지정)"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/reno/quick-memo/merge-with-customer"
+    headers:
+      Content-Type: "application/json"
+    body:
+      text: "알파브릿지투자조합 담당자 김민준 연락처 010-1234-5678 오늘 처음 미팅 예정"
+      customerId: "{{CUSTOMER_ID_1}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 30000
+
+  - name: "[WF-02 TC-02-03] 병합 후 고객 컨텍스트 V2 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/context-v2"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  # ================================================================
+  # WF-03: 퀵메모 → 기존 고객 컨텍스트 업데이트
+  # ================================================================
+
+  - name: "[WF-03 TC-03-01] 퀵메모 분석 → 기존 고객명 포함 메모"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/reno/quick-memo/analyze"
+    headers:
+      Content-Type: "application/json"
+    body:
+      text: "{{TEST_COMPANY}} 오늘 2차 미팅 완료. 가격 조건 합의 됨. 다음주 계약서 검토 예정."
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 30000
+
+  - name: "[WF-03 TC-03-02] 식별된 고객으로 컨텍스트 병합"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/context-v2/merge"
+    headers:
+      Content-Type: "application/json"
+    body:
+      memo: "{{TEST_COMPANY}} 오늘 2차 미팅 완료. 가격 조건 합의 됨. 다음주 계약서 검토 예정."
+      merge_mode: "append"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 30000
+
+  - name: "[WF-03 TC-03-03] 병합 후 활동 로그 항목 생성 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/activities"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  # ================================================================
+  # WF-04: 고객 상세 페이지 직접 수정
+  # ================================================================
+
+  - name: "[WF-04 TC-04-01] 영업 단계 변경 → 회원가입 진행중"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "회원가입 진행중"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          sales_stage: "회원가입 진행중"
+    timeout: 5000
+
+  - name: "[WF-04 TC-04-02] 담당자(manager) 이름 변경"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      manager: "김세일즈"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          manager: "김세일즈"
+    timeout: 5000
+
+  - name: "[WF-04 TC-04-03] 1차 카테고리 변경 → 금융"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      category_level1: "금융"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-04 TC-04-04] 연락처 추가 → 실무자"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}/contacts"
+    headers:
+      Content-Type: "application/json"
+    body:
+      name: "이실무"
+      position: "팀장"
+      contact_type: "실무자"
+      phone: "010-9876-5432"
+      email: "lee.silmu@qa-test.com"
+      department: "투자팀"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@number"
+          name: "이실무"
+    save:
+      CONTACT_ID: "$.data.id"
+    timeout: 5000
+
+  - name: "[WF-04 TC-04-05] 대표 담당자(primary) 변경"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}/contacts/{{CONTACT_ID}}/primary"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-04 TC-04-06] 연락처 수정 → 이메일 변경"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}/contacts/{{CONTACT_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      name: "이실무"
+      position: "팀장"
+      contact_type: "실무자"
+      phone: "010-9876-5432"
+      email: "lee.silmu.updated@qa-test.com"
+      department: "투자팀"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  # ================================================================
+  # WF-05: 미팅 생성 및 노트 관리
+  # ================================================================
+
+  - name: "[WF-05 TC-05-01] 미팅 생성 → scheduled 상태"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/meetings"
+    headers:
+      Content-Type: "application/json"
+    body:
+      customer_id: "{{CUSTOMER_ID_1}}"
+      title: "QA 테스트 미팅 — 계약 조건 검토"
+      date: "2026-03-10"
+      time: "14:00"
+      location: "본사 2층 회의실"
+      attendees: "김세일즈, 이실무"
+      agenda: "계약 조건 최종 확인 및 서명 일정 협의"
+      status: "scheduled"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@number"
+          status: "scheduled"
+    save:
+      MEETING_ID: "$.data.id"
+    timeout: 10000
+
+  - name: "[WF-05 TC-05-02] 미팅 노트 작성"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/meetings/{{MEETING_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      customer_id: "{{CUSTOMER_ID_1}}"
+      title: "QA 테스트 미팅 — 계약 조건 검토"
+      date: "2026-03-10"
+      status: "scheduled"
+      notes: "계약 조건 합의 완료. 수수료율 1.5% 확정. 다음주 계약서 서명 예정."
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-05 TC-05-03] 미팅 상태 완료 처리 (scheduled → completed)"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/meetings/{{MEETING_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      customer_id: "{{CUSTOMER_ID_1}}"
+      title: "QA 테스트 미팅 — 계약 조건 검토"
+      date: "2026-03-10"
+      status: "completed"
+      notes: "계약 조건 합의 완료. 수수료율 1.5% 확정. 다음주 계약서 서명 예정."
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          status: "completed"
+    timeout: 5000
+
+  - name: "[WF-05 TC-05-04] 고객별 미팅 이력 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/meetings/customer/{{CUSTOMER_ID_1}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-05 TC-05-05] 다가오는 미팅 위젯 API 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/meetings/upcoming"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  # ================================================================
+  # WF-06: 음성/Fireflies API 구조 확인
+  # ================================================================
+
+  - name: "[WF-06 TC-06-01] 음성 업로드 대기 건수 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/voice/pending-count"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-06 TC-06-02] STT 상태 조회 → 잘못된 ID → 404"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/voice/status/00000000-0000-0000-0000-000000000000"
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 5000
+
+  - name: "[WF-06 TC-06-03] Fireflies 트랜스크립트 목록 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/fireflies/transcripts"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  # ================================================================
+  # WF-07: 고객 문서 관리 API 확인
+  # ================================================================
+
+  - name: "[WF-07 TC-07-01] 고객 문서 목록 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}/documents"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-07 TC-07-02] 존재하지 않는 문서 조회 → 404"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}/documents/00000000-0000-0000-0000-000000000001"
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 5000
+
+  # ================================================================
+  # WF-08: Reno AI 고객 컨텍스트 & 활동 관리
+  # ================================================================
+
+  - name: "[WF-08 TC-08-01] 고객 컨텍스트 V2 전체 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/context-v2"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-08 TC-08-02] 고객 프로필 V3 구조화 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/profile"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-08 TC-08-03] 활동 타임라인 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/activities"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-08 TC-08-04] 컨텍스트 V2 직접 업데이트 (수동 수정)"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/context-v2"
+    headers:
+      Content-Type: "application/json"
+    body:
+      context: "## 고객 현황\n- 영업 단계: 회원가입 진행중\n- 담당자: 이실무 팀장 (투자팀)\n- 최근 미팅: 계약 조건 합의 완료 (2026-03-10)"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  # ================================================================
+  # WF-09: 고객 목록 필터링 & 검색
+  # ================================================================
+
+  - name: "[WF-09 TC-09-01] 회사명 키워드 검색"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers?search=QA테스트법인"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-09 TC-09-02] 영업 단계 필터 → 회원가입 진행중"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers?sales_stage=%ED%9A%8C%EC%9B%90%EA%B0%80%EC%9E%85+%EC%A7%84%ED%96%89%EC%A4%91"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-09 TC-09-03] 내 고객 보기 (view=mine)"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers?view=mine"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-09 TC-09-04] 즐겨찾기 고객 목록 (view=favorites)"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers?view=favorites"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-09 TC-09-05] 고객 통계 조회 → 영업 단계별 집계"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/statistics"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  # ================================================================
+  # WF-10: 슬랙 채널 보고 → 컨텍스트 수동 반영
+  # ================================================================
+
+  - name: "[WF-10 TC-10-01] 슬랙 보고 내용을 컨텍스트에 수동 반영"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/context-v2/merge"
+    headers:
+      Content-Type: "application/json"
+    body:
+      memo: "[슬랙 #영업-보고 채널] QA테스트법인 오늘 계약서 서명 완료. 거래 시작 준비 중."
+      merge_mode: "append"
+      source: "slack"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 30000
+
+  - name: "[WF-10 TC-10-02] 병합 후 활동 로그 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/reno/customer/{{CUSTOMER_ID_1}}/activities"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-10 TC-10-03] 영업 단계 최종 업데이트 → 액티브 고객"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "액티브 고객"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          sales_stage: "액티브 고객"
+    timeout: 5000
+
+  # ================================================================
+  # [정리] 테스트 데이터 삭제
+  # ================================================================
+
+  - name: "[CLEANUP] 테스트 연락처 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}/contacts/{{CONTACT_ID}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[CLEANUP] 테스트 미팅 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/meetings/{{MEETING_ID}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[CLEANUP] 테스트 고객 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{CUSTOMER_ID_1}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000

@@ -3,7 +3,9 @@
  * Executes HTTP-based test steps
  */
 
-import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import { wrapper } from 'axios-cookiejar-support';
+import { CookieJar } from 'tough-cookie';
 
 export interface HttpTestStep {
   name: string;
@@ -40,6 +42,16 @@ export interface HttpTestResult {
 
 export class HttpAdapter {
   private savedVariables: Map<string, any> = new Map();
+  private cookieJar: CookieJar;
+  private axiosInstance: AxiosInstance;
+
+  constructor() {
+    this.cookieJar = new CookieJar();
+    this.axiosInstance = wrapper(axios.create({
+      jar: this.cookieJar,
+      withCredentials: true,
+    }));
+  }
 
   /**
    * Execute a single HTTP test step
@@ -72,8 +84,8 @@ export class HttpAdapter {
         config.data = body;
       }
 
-      // Execute request
-      const response: AxiosResponse = await axios(config);
+      // Execute request (cookie jar persists session cookies across steps)
+      const response: AxiosResponse = await this.axiosInstance(config);
 
       // Save variables if specified
       if (step.save) {
