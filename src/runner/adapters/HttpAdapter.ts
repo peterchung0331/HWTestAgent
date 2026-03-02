@@ -24,6 +24,7 @@ export interface HttpTestStep {
   };
   timeout?: number;
   save?: Record<string, string>;
+  allow_failure?: boolean; // If true, step always passes regardless of assertions
 }
 
 export interface HttpTestResult {
@@ -63,10 +64,11 @@ export class HttpAdapter {
       console.log(`\n🌐 Executing HTTP step: ${step.name}`);
       console.log(`   ${step.method.toUpperCase()} ${step.url}`);
 
-      // Replace variables in URL, headers, and body
+      // Replace variables in URL, headers, body, and expect
       const url = this.replaceVariables(step.url);
       const headers = this.replaceVariables(step.headers || {});
       const body = this.replaceVariables(step.body);
+      const expect = this.replaceVariables(step.expect);
 
       // Build axios config
       const config: AxiosRequestConfig = {
@@ -92,28 +94,31 @@ export class HttpAdapter {
         this.saveVariablesFromResponse(step.save, response.data);
       }
 
-      // Validate response
-      const validationError = this.validateResponse(step.expect, response);
+      // Validate response (with variable-substituted expect)
+      const validationError = this.validateResponse(expect, response);
 
       const finished_at = new Date();
       const duration_ms = finished_at.getTime() - started_at.getTime();
 
       if (validationError) {
-        console.log(`   ❌ FAILED: ${validationError}`);
-
-        return {
-          name: step.name,
-          status: 'FAILED',
-          started_at,
-          finished_at,
-          duration_ms,
-          error_message: validationError,
-          response_data: {
-            status: response.status,
-            headers: response.headers,
-            body: response.data
-          }
-        };
+        if (step.allow_failure) {
+          console.log(`   ⚠️  ALLOW_FAILURE (${validationError})`);
+        } else {
+          console.log(`   ❌ FAILED: ${validationError}`);
+          return {
+            name: step.name,
+            status: 'FAILED',
+            started_at,
+            finished_at,
+            duration_ms,
+            error_message: validationError,
+            response_data: {
+              status: response.status,
+              headers: response.headers,
+              body: response.data
+            }
+          };
+        }
       }
 
       console.log(`   ✅ PASSED (${duration_ms}ms)`);
