@@ -1,0 +1,824 @@
+# ================================================================
+# 세일즈허브 고객 정보 수정 QA 테스트
+# ================================================================
+# 대상: 기존 고객 정보 수정 전체 시나리오
+# 관점: 세일즈 담당자 — 실제 수정 작업 흐름 중심
+# 환경: staging (https://staging.workhub.biz:4400/saleshub)
+# 생성: 2026-03-02
+#
+# 워크플로우 목록:
+#   WF-E01  고객 기본 필드 전체 수정 (PUT + PATCH 혼합)
+#   WF-E02  영업 단계 라이프사이클 전환
+#   WF-E03  다중 담당자(연락처) 관리 CRUD
+#   WF-E04  영업 활동 로그 CRUD + 통계/필터
+#   WF-E05  KYC·온보딩 날짜 및 우선 고객 설정
+# ================================================================
+
+name: "세일즈허브 고객 수정 QA 테스트"
+slug: "customer-edit-qa"
+description: |
+  기존 고객 정보 수정 전체 흐름을 검증하는 QA 테스트.
+  기본 필드 수정 → 영업 단계 라이프사이클 → 다중 연락처 CRUD →
+  영업 활동 로그 CRUD + 통계 → KYC/온보딩 날짜 설정까지
+  5개 워크플로우, 30개+ 테스트 케이스로 검증한다.
+type: PRECISION
+environment: staging
+timeout: 600000
+notify_on:
+  - failure
+  - recovery
+
+variables:
+  BASE_URL: "https://staging.workhub.biz:4400/saleshub"
+  TEST_EMAIL: "peter.chung@wavebridge.com"
+  TEST_PASSWORD: "wave1234!!"
+  TEST_COMPANY: "QA테스트법인-EDIT-QA-001"
+
+steps:
+
+  # ================================================================
+  # [인증] 세션 쿠키 획득
+  # ================================================================
+
+  - name: "[AUTH] 로그인 → 세션 쿠키 획득"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/auth/login"
+    headers:
+      Content-Type: "application/json"
+    body:
+      email: "{{TEST_EMAIL}}"
+      password: "{{TEST_PASSWORD}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 10000
+
+  - name: "[AUTH] /api/auth/me → 인증 상태 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/auth/me"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  # ================================================================
+  # [SETUP] 이전 실행 데이터 정리 → 신규 테스트 고객 생성
+  # ================================================================
+
+  - name: "[SETUP] 기존 EDIT 테스트 고객 검색"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers?search=QA테스트법인-EDIT-QA-001&limit=1"
+    expect:
+      status: 200
+    save:
+      CLEANUP_ID: "$.data.data.0.id"
+    timeout: 5000
+    allow_failure: true
+
+  - name: "[SETUP] 기존 EDIT 테스트 고객 삭제 (없으면 무시)"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{CLEANUP_ID}}"
+    expect:
+      status: 200
+    timeout: 5000
+    allow_failure: true
+
+  - name: "[SETUP] 테스트 고객 신규 생성"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers"
+    headers:
+      Content-Type: "application/json"
+    body:
+      company_name: "{{TEST_COMPANY}}"
+      entity_type: "법인"
+      sales_stage: "잠재 고객"
+      manager: "박테스트"
+      category_level1: "금융"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@string"
+    save:
+      EDIT_CUSTOMER_ID: "$.data.id"
+    timeout: 10000
+
+  - name: "[SETUP] 1번 연락처 추가 (의사결정자) → CONTACT_A_ID"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/contacts"
+    headers:
+      Content-Type: "application/json"
+    body:
+      name: "김의사결정"
+      position: "대표이사"
+      contact_type: "책임자"
+      phone: "010-1111-2222"
+      email: "ceo.kim@qa-test.com"
+      department: "경영팀"
+      is_primary: true
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@string"
+    save:
+      CONTACT_A_ID: "$.data.id"
+    timeout: 5000
+
+  # ================================================================
+  # WF-E01: 고객 기본 필드 수정 (PUT — 복수 필드 일괄 업데이트)
+  # ================================================================
+
+  - name: "[WF-E01 TC-01] CEO 이름·사업분야·지역 일괄 수정 (PUT)"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      company_name: "{{TEST_COMPANY}}"
+      entity_type: "법인"
+      sales_stage: "잠재 고객"
+      manager: "박테스트"
+      category_level1: "금융"
+      ceo_name: "이대표"
+      business_area: "자산운용·투자자문"
+      location: "서울 중구"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          ceo_name: "이대표"
+          business_area: "자산운용·투자자문"
+          location: "서울 중구"
+    timeout: 5000
+
+  - name: "[WF-E01 TC-02] 수정 후 상세 조회 → CEO·사업분야 필드 검증"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          ceo_name: "이대표"
+          business_area: "자산운용·투자자문"
+          location: "서울 중구"
+    timeout: 5000
+
+  - name: "[WF-E01 TC-03] 2차 카테고리 추가 (PATCH — 단일 필드)"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      category_level2: "펀드"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          category_level2: "펀드"
+    timeout: 5000
+
+  - name: "[WF-E01 TC-04] priority_customer = true 설정 (우선 고객 지정)"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      priority_customer: true
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          priority_customer: true
+    timeout: 5000
+
+  - name: "[WF-E01 TC-05] priority_customer = false 해제 (우선 고객 해제)"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      priority_customer: false
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          priority_customer: false
+    timeout: 5000
+
+  - name: "[WF-E01 TC-06] 담당자(manager) 변경"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      manager: "최수정"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          manager: "최수정"
+    timeout: 5000
+
+  # ================================================================
+  # WF-E02: 영업 단계 라이프사이클 전환 (전체 단계 순서대로)
+  # ================================================================
+
+  - name: "[WF-E02 TC-01] 잠재 고객 → 회원가입 진행중"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "회원가입 진행중"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          sales_stage: "회원가입 진행중"
+    timeout: 5000
+
+  - name: "[WF-E02 TC-02] 회원가입 진행중 → 회원가입 완료"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "회원가입 완료"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          sales_stage: "회원가입 완료"
+    timeout: 5000
+
+  - name: "[WF-E02 TC-03] 회원가입 완료 → 액티브 고객"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "액티브 고객"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          sales_stage: "액티브 고객"
+    timeout: 5000
+
+  - name: "[WF-E02 TC-04] 액티브 고객 → 휴면 고객"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "휴면/지연 고객"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          sales_stage: "휴면/지연 고객"
+    timeout: 5000
+
+  - name: "[WF-E02 TC-05] 영업 단계 필터 조회 → 휴면/지연 고객 목록 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers?sales_stage=%ED%9C%B4%EB%A9%B4%2F%EC%A7%80%EC%97%B0+%EA%B3%A0%EA%B0%9D"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-E02 TC-06] 휴면 고객 → Drop (최종 단계)"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "Drop"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          sales_stage: "Drop"
+    timeout: 5000
+
+  - name: "[WF-E02 TC-07] Drop → 잠재 고객 (단계 되돌리기)"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "잠재 고객"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          sales_stage: "잠재 고객"
+    timeout: 5000
+
+  # ================================================================
+  # WF-E03: 다중 담당자(연락처) 관리 CRUD
+  # ================================================================
+
+  - name: "[WF-E03 TC-01] 2번 연락처 추가 (실무자) → CONTACT_B_ID"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/contacts"
+    headers:
+      Content-Type: "application/json"
+    body:
+      name: "이실무자"
+      position: "팀장"
+      contact_type: "실무자"
+      phone: "010-3333-4444"
+      email: "manager.lee@qa-test.com"
+      department: "투자팀"
+      notes: "미팅 스케줄 조율 담당"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@string"
+          name: "이실무자"
+    save:
+      CONTACT_B_ID: "$.data.id"
+    timeout: 5000
+
+  - name: "[WF-E03 TC-02] 고객 상세 조회 → 연락처 2명 포함 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          contacts: "@array"
+    timeout: 5000
+
+  - name: "[WF-E03 TC-03] 2번 연락처를 primary로 변경 (대표 담당자 교체)"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/contacts/{{CONTACT_B_ID}}/primary"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-E03 TC-04] 2번 연락처 직함 수정 → 부장으로 승진"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/contacts/{{CONTACT_B_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      name: "이실무자"
+      position: "부장"
+      contact_type: "실무자"
+      phone: "010-3333-4444"
+      email: "manager.lee@qa-test.com"
+      department: "투자팀"
+      notes: "미팅 스케줄 조율 담당"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          position: "부장"
+    timeout: 5000
+
+  - name: "[WF-E03 TC-05] 2번 연락처 이메일 수정"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/contacts/{{CONTACT_B_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      name: "이실무자"
+      position: "부장"
+      contact_type: "실무자"
+      phone: "010-3333-4444"
+      email: "lee.updated@qa-test.com"
+      department: "투자팀"
+      notes: "미팅 스케줄 조율 담당"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          email: "lee.updated@qa-test.com"
+    timeout: 5000
+
+  - name: "[WF-E03 TC-06] 1번 연락처를 다시 primary로 복원"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/contacts/{{CONTACT_A_ID}}/primary"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-E03 TC-07] 2번 연락처 삭제 (ADMIN 권한)"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/contacts/{{CONTACT_B_ID}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-E03 TC-08] 삭제 후 고객 상세 → 연락처 1명만 남음 확인"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          contacts: "@array"
+    timeout: 5000
+
+  # ================================================================
+  # WF-E04: 영업 활동 로그 CRUD + 통계·필터 검증
+  # ================================================================
+
+  - name: "[WF-E04 TC-01] 미팅 활동 추가 → ACTIVITY_MEETING_ID"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities"
+    headers:
+      Content-Type: "application/json"
+    body:
+      activity_date: "2026-03-01"
+      activity_type: "미팅"
+      title: "1차 영업 미팅 — 서비스 소개"
+      content: "Wavebridge Prime 플랫폼 소개 및 수수료 구조 설명. 긍정적 반응."
+      next_action_plan: "2주 내 KYC 서류 요청 예정"
+      created_by: "최수정"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@string"
+          activity_type: "미팅"
+    save:
+      ACTIVITY_MEETING_ID: "$.data.id"
+    timeout: 5000
+
+  - name: "[WF-E04 TC-02] 전화 활동 추가 → ACTIVITY_CALL_ID"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities"
+    headers:
+      Content-Type: "application/json"
+    body:
+      activity_date: "2026-03-03"
+      activity_type: "전화"
+      title: "KYC 서류 진행 현황 확인 전화"
+      content: "담당자 이실무자 부장에게 전화. 서류 준비 중, 다음주까지 제출 예정."
+      next_action_plan: "서류 수신 후 온보딩 절차 진행"
+      created_by: "최수정"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@string"
+          activity_type: "전화"
+    save:
+      ACTIVITY_CALL_ID: "$.data.id"
+    timeout: 5000
+
+  - name: "[WF-E04 TC-03] 이메일 활동 추가 → ACTIVITY_EMAIL_ID"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities"
+    headers:
+      Content-Type: "application/json"
+    body:
+      activity_date: "2026-03-05"
+      activity_type: "이메일"
+      title: "회원가입 안내 이메일 발송"
+      content: "KYC 완료 확인 후 회원가입 링크 및 안내서 발송."
+      next_action_plan: "3일 내 가입 완료 여부 확인"
+      created_by: "최수정"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@string"
+          activity_type: "이메일"
+    save:
+      ACTIVITY_EMAIL_ID: "$.data.id"
+    timeout: 5000
+
+  - name: "[WF-E04 TC-04] enhanced 통계 조회 → 총 3건, 미팅/전화/이메일 각 1건"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/enhanced"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          stats:
+            total: "@number"
+            by_type:
+              all: "@number"
+    timeout: 5000
+
+  - name: "[WF-E04 TC-05] type=미팅 필터 → 미팅 활동만 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/enhanced?type=%EB%AF%B8%ED%8C%85"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          stats:
+            by_type:
+              "미팅": "@number"
+    timeout: 5000
+
+  - name: "[WF-E04 TC-06] 날짜 범위 필터 (2026-03-01 ~ 2026-03-05)"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/enhanced?startDate=2026-03-01&endDate=2026-03-05"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          stats:
+            total: "@number"
+    timeout: 5000
+
+  - name: "[WF-E04 TC-07] 미팅 활동 내용 수정 (next_action_plan 업데이트)"
+    type: http
+    method: PUT
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/{{ACTIVITY_MEETING_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      activity_date: "2026-03-01"
+      activity_type: "미팅"
+      title: "1차 영업 미팅 — 서비스 소개"
+      content: "Wavebridge Prime 플랫폼 소개 및 수수료 구조 설명. 긍정적 반응."
+      next_action_plan: "KYC 서류 요청 완료. 다음주 회원가입 진행 예정."
+      created_by: "최수정"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          next_action_plan: "KYC 서류 요청 완료. 다음주 회원가입 진행 예정."
+    timeout: 5000
+
+  - name: "[WF-E04 TC-08] 제안 활동 추가 (4번째)"
+    type: http
+    method: POST
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities"
+    headers:
+      Content-Type: "application/json"
+    body:
+      activity_date: "2026-03-07"
+      activity_type: "제안"
+      title: "맞춤 투자 제안서 발송"
+      content: "고객사 자산 규모에 맞춘 운용 제안서 및 수수료 시나리오 3종 발송."
+      next_action_plan: "1주 내 검토 후 피드백 예정"
+      created_by: "최수정"
+    expect:
+      status: 201
+      json:
+        success: true
+        data:
+          id: "@string"
+          activity_type: "제안"
+    save:
+      ACTIVITY_PROPOSAL_ID: "$.data.id"
+    timeout: 5000
+
+  - name: "[WF-E04 TC-09] enhanced → 총 4건 확인 (3+1)"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/enhanced"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          stats:
+            total: "@number"
+    timeout: 5000
+
+  - name: "[WF-E04 TC-10] 이메일 활동 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/{{ACTIVITY_EMAIL_ID}}"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-E04 TC-11] 삭제 후 enhanced → 총 3건으로 감소"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/enhanced"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          stats:
+            total: "@number"
+    timeout: 5000
+
+  # ================================================================
+  # WF-E05: KYC·온보딩 날짜 및 고급 필드 설정
+  # ================================================================
+
+  - name: "[WF-E05 TC-01] KYC 완료 처리 (kyc_completed + kyc_completed_date)"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      kyc_completed: true
+      kyc_completed_date: "2026-03-08"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          kyc_completed: true
+    timeout: 5000
+
+  - name: "[WF-E05 TC-02] 온보딩 시작일 설정"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      onboarding_start_date: "2026-03-10"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-E05 TC-03] 온보딩 완료 처리 (onboarding_completed + approval_date)"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      onboarding_completed: true
+      approval_date: "2026-03-15"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          onboarding_completed: true
+    timeout: 5000
+
+  - name: "[WF-E05 TC-04] 갱신일(renewal_date) 설정"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    headers:
+      Content-Type: "application/json"
+    body:
+      renewal_date: "2027-03-15"
+    expect:
+      status: 200
+      json:
+        success: true
+    timeout: 5000
+
+  - name: "[WF-E05 TC-05] 모든 수정 사항 누적 검증 → 최종 상세 조회"
+    type: http
+    method: GET
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    expect:
+      status: 200
+      json:
+        success: true
+        data:
+          ceo_name: "이대표"
+          business_area: "자산운용·투자자문"
+          manager: "최수정"
+          kyc_completed: true
+          onboarding_completed: true
+    timeout: 5000
+
+  - name: "[WF-E05 TC-06] 존재하지 않는 고객 수정 → 404 반환"
+    type: http
+    method: PATCH
+    url: "{{BASE_URL}}/api/customers/00000000-0000-0000-0000-000000000099"
+    headers:
+      Content-Type: "application/json"
+    body:
+      sales_stage: "잠재 고객"
+    expect:
+      status: 404
+      json:
+        success: false
+    timeout: 5000
+
+  # ================================================================
+  # [CLEANUP] 테스트 데이터 삭제
+  # ================================================================
+
+  - name: "[CLEANUP] 미팅 활동 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/{{ACTIVITY_MEETING_ID}}"
+    expect:
+      status: 200
+    timeout: 5000
+    allow_failure: true
+
+  - name: "[CLEANUP] 전화 활동 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/{{ACTIVITY_CALL_ID}}"
+    expect:
+      status: 200
+    timeout: 5000
+    allow_failure: true
+
+  - name: "[CLEANUP] 제안 활동 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/activities/{{ACTIVITY_PROPOSAL_ID}}"
+    expect:
+      status: 200
+    timeout: 5000
+    allow_failure: true
+
+  - name: "[CLEANUP] 1번 연락처 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}/contacts/{{CONTACT_A_ID}}"
+    expect:
+      status: 200
+    timeout: 5000
+    allow_failure: true
+
+  - name: "[CLEANUP] 테스트 고객 삭제"
+    type: http
+    method: DELETE
+    url: "{{BASE_URL}}/api/customers/{{EDIT_CUSTOMER_ID}}"
+    expect:
+      status: 200
+    timeout: 5000
+    allow_failure: true

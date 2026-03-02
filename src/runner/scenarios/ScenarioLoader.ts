@@ -118,7 +118,8 @@ export class ScenarioLoader {
       body: step.body,
       expect: step.expect || {},
       timeout: step.timeout,
-      save: step.save
+      save: step.save,
+      allow_failure: step.allow_failure || false
     } as HttpTestStep;
   }
 
