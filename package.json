@@ -1,7 +1,7 @@
 {
-  "name": "hwtestagent",
-  "version": "1.0.0",
-  "description": "Hybrid WorkHub Test Agent - 24/7 AI-powered automated testing system",
+  "name": "workhub-probe",
+  "version": "2.0.0",
+  "description": "WorkHub Probe - 24/7 AI-powered automated testing system",
   "type": "module",
   "main": "dist/server/index.js",
   "scripts": {

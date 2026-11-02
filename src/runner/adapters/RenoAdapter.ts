@@ -71,7 +71,7 @@ export interface RenoTestResult {
   error?: string;
 }
 
-// HWTestAgent용 테스트 스텝 타입
+// WorkHub Probe 테스트 스텝 타입
 export interface RenoTestStep {
   name: string;
   type: 'reno';

@@ -1,0 +1,51 @@
+# HWTestAgent Nginx Configuration
+# Location: /etc/nginx/sites-available/workhub (on Oracle server)
+#
+# Add this to the existing workhub nginx configuration
+
+# HWTestAgent API (포트 4100)
+location /testagent/ {
+    # Remove trailing slash and forward path
+    rewrite ^/testagent/?(.*)$ /$1 break;
+
+    proxy_pass http://localhost:4100;
+    proxy_http_version 1.1;
+
+    # WebSocket support (if needed)
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection 'upgrade';
+
+    # Standard proxy headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache_bypass $http_upgrade;
+
+    # Increased timeouts for AI solution generation (30-60s)
+    proxy_read_timeout 60s;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+}
+
+# Health check endpoint (direct proxy)
+location = /testagent/health {
+    proxy_pass http://localhost:4100/api/health;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+
+    # Quick timeout for health checks
+    proxy_read_timeout 10s;
+    proxy_connect_timeout 5s;
+}
+
+# Dashboard root (serves public/index.html)
+location = /testagent {
+    proxy_pass http://localhost:4100/;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}

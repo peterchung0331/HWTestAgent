@@ -9,10 +9,10 @@ import { Request, Response, NextFunction } from 'express';
  * Verify API key from Authorization header
  */
 export function authenticateApiKey(req: Request, res: Response, next: NextFunction): void {
-  const apiKey = process.env.HWTEST_API_KEY;
+  const apiKey = process.env.PROBE_API_KEY;
 
   if (!apiKey) {
-    console.warn('⚠️  HWTEST_API_KEY not configured, skipping authentication');
+    console.warn('⚠️  PROBE_API_KEY not configured, skipping authentication');
     next();
     return;
   }

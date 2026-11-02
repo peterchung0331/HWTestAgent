@@ -78,7 +78,7 @@ export class TestRunner {
    * Run a test scenario
    */
   async run(options: RunOptions): Promise<TestRunResult> {
-    console.log('\n🚀 ===== HWTestAgent Test Run =====\n');
+    console.log('\n🚀 ===== WorkHub Probe Test Run =====\n');
     console.log(`📦 Project: ${options.project}`);
     console.log(`🎯 Scenario: ${options.scenario}`);
     console.log(`🌍 Environment: ${options.environment}`);

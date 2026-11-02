@@ -1,0 +1,22 @@
+# Build artifacts
+node_modules/
+dist/
+
+# Test results (generated output, not code)
+test-results/
+playwright-report/
+test-plans/
+
+# Lock files
+package-lock.json
+
+# Binary and media
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.zip
+
+# Logs
+*.log

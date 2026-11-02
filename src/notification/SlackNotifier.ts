@@ -1,9 +1,14 @@
 /**
- * Slack Notifier
- * Sends notifications to Slack via webhook
+ * WorkHub Probe Slack Notifier
+ * Sends notifications to Slack via webhook with known solution suggestions
  */
 
 import axios from 'axios';
+
+export interface KnownSolution {
+  solution_title: string;
+  success_rate?: number;
+}
 
 export interface TestRunNotification {
   project_name: string;
@@ -21,6 +26,7 @@ export interface TestRunNotification {
   failed_steps_details?: Array<{
     name: string;
     error_message: string;
+    known_solutions?: KnownSolution[];
   }>;
 }
 
@@ -85,7 +91,6 @@ export class SlackNotifier {
 
     const emoji = status === 'PASSED' ? '✅' : '❌';
     const statusText = status === 'PASSED' ? 'PASSED' : 'FAILED';
-    const color = status === 'PASSED' ? '#36a64f' : '#ff0000';
 
     const blocks: any[] = [];
 
@@ -138,7 +143,7 @@ export class SlackNotifier {
       fields: summary_fields
     });
 
-    // Failed steps section (if any)
+    // Failed steps section with known solutions
     if (failed_steps > 0 && failed_steps_details) {
       blocks.push({
         type: 'divider'
@@ -153,11 +158,25 @@ export class SlackNotifier {
       });
 
       for (const failed_step of failed_steps_details.slice(0, 5)) {
+        let stepText = `❌ *${failed_step.name}*\n\`\`\`${failed_step.error_message}\`\`\``;
+
+        // 알려진 해결책 추가
+        if (failed_step.known_solutions && failed_step.known_solutions.length > 0) {
+          const solutionLines = failed_step.known_solutions
+            .slice(0, 3)
+            .map(s => {
+              const rate = s.success_rate ? ` (성공률 ${s.success_rate}%)` : '';
+              return `  💡 ${s.solution_title}${rate}`;
+            })
+            .join('\n');
+          stepText += `\n${solutionLines}`;
+        }
+
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `❌ *${failed_step.name}*\n\`\`\`${failed_step.error_message}\`\`\``
+            text: stepText
           }
         });
       }
@@ -218,7 +237,7 @@ export class SlackNotifier {
       elements: [
         {
           type: 'mrkdwn',
-          text: `Project: ${project_name} | Scenario: ${scenario_slug} | Started: ${this.formatDate(started_at)}`
+          text: `WorkHub Probe | ${project_name} | ${scenario_slug} | Started: ${this.formatDate(started_at)}`
         }
       ]
     });

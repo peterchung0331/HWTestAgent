@@ -1,7 +1,7 @@
 /**
  * Error Reporter Utility
  *
- * 테스트 실행 중 발생한 에러를 자동으로 HWTestAgent 에러 DB에 기록합니다.
+ * 테스트 실행 중 발생한 에러를 자동으로 WorkHub Probe 에러 DB에 기록합니다.
  *
  * 사용처:
  * - 스킬테스터-E2E: Playwright 테스트 실패 시
@@ -12,7 +12,7 @@
 import axios from 'axios';
 import crypto from 'crypto';
 
-const API_BASE_URL = process.env.HWTESTAGENT_API_URL || 'http://localhost:4100/api';
+const API_BASE_URL = process.env.PROBE_API_URL || 'http://localhost:4100/api';
 
 export interface ErrorReportInput {
   project_name: string;

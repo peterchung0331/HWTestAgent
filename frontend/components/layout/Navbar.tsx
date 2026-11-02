@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FlaskConical, AlertTriangle, ClipboardList, FileText, BarChart3, CheckCircle2 } from 'lucide-react';
+import { FlaskConical, AlertTriangle, ClipboardList, FileText, BarChart3, CheckCircle2, Globe } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: '대시보드', icon: BarChart3 },
+  { href: '/cross-hub', label: 'Cross-Hub', icon: Globe },
   { href: '/error-patterns', label: '에러 패턴', icon: AlertTriangle },
   { href: '/debugging-checklists', label: '체크리스트', icon: CheckCircle2 },
   { href: '/test-results', label: '테스트 결과', icon: ClipboardList },
@@ -23,7 +24,7 @@ export default function Navbar() {
             {/* Logo */}
             <Link href="/" className="flex items-center">
               <FlaskConical className="w-8 h-8 text-blue-600 mr-2" />
-              <span className="text-xl font-bold text-gray-900">HWTestAgent</span>
+              <span className="text-xl font-bold text-gray-900">WorkHub Probe</span>
             </Link>
 
             {/* Navigation Links */}
@@ -54,7 +55,7 @@ export default function Navbar() {
           {/* Right side info */}
           <div className="flex items-center">
             <div className="text-sm text-gray-500">
-              v1.0.0
+              v2.0.0
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 /**
- * HWTestAgent Server
+ * WorkHub Probe Server
  * Express API server for test automation
  */
 
@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { testConnection } from '../storage/db.js';
 import apiRouter from './routes/api.js';
+import ProbeScheduler from '../scheduler/ProbeScheduler.js';
 
 dotenv.config();
 
@@ -60,9 +61,9 @@ app.use('/api', apiRouter);
 // Root route
 app.get('/', (req: Request, res: Response) => {
   res.json({
-    name: 'HWTestAgent',
-    version: '1.0.0',
-    description: 'Hybrid WorkHub Test Agent - 24/7 AI-powered automated testing system',
+    name: 'WorkHub Probe',
+    version: '2.0.0',
+    description: 'WorkHub Probe - 24/7 AI-powered automated testing system',
     endpoints: {
       health: '/api/health',
       test_run: 'POST /api/test/run',
@@ -70,7 +71,7 @@ app.get('/', (req: Request, res: Response) => {
       test_result_detail: 'GET /api/test/results/:id',
       test_stats: 'GET /api/test/stats/:project'
     },
-    documentation: 'https://github.com/peterchung0331/HWTestAgent'
+    documentation: 'https://github.com/peterchung0331/WorkHubProbe'
   });
 });
 
@@ -100,7 +101,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 async function startServer() {
   try {
-    console.log('\n🚀 Starting HWTestAgent Server...\n');
+    console.log('\n🚀 Starting WorkHub Probe Server...\n');
 
     // Test database connection
     console.log('🔍 Testing database connection...');
@@ -118,13 +119,23 @@ async function startServer() {
     // Start server
     app.listen(PORT, () => {
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('🎉 HWTestAgent Server Started');
+      console.log('🎉 WorkHub Probe Server Started');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log(`📡 Server: http://localhost:${PORT}`);
       console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
       console.log(`📊 API Docs: http://localhost:${PORT}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔔 Slack: ${process.env.SLACK_WEBHOOK_URL ? 'Enabled ✅' : 'Disabled ⚠️'}`);
+
+      // 스케줄러 시작 (PROBE_SCHEDULER=true 일 때)
+      if (process.env.PROBE_SCHEDULER === 'true') {
+        ProbeScheduler.registerDefaultJobs();
+        ProbeScheduler.start();
+        console.log(`🕐 Scheduler: Enabled ✅ (${ProbeScheduler.getJobs().length} jobs)`);
+      } else {
+        console.log('🕐 Scheduler: Disabled (set PROBE_SCHEDULER=true to enable)');
+      }
+
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
       console.log('💡 Ready to accept test requests!\n');
     });

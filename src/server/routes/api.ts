@@ -7,11 +7,13 @@ import express, { Router, Request, Response } from 'express';
 import { TestRunner } from '../../runner/TestRunner.js';
 import { Environment, TriggerSource } from '../../storage/models/TestRun.js';
 import TestRepository from '../../storage/repositories/TestRepository.js';
-import SlackNotifier from '../../notification/SlackNotifier.js';
+import { ErrorPatternRepository } from '../../storage/repositories/ErrorPatternRepository.js';
+import SlackNotifier, { type KnownSolution } from '../../notification/SlackNotifier.js';
 import { authenticateApiKey } from '../middleware/auth.js';
 
 const router: Router = express.Router();
 const testRunner = new TestRunner();
+const errorPatternRepo = new ErrorPatternRepository();
 
 /**
  * POST /api/test/run
@@ -63,12 +65,32 @@ router.post('/test/run', authenticateApiKey, async (req: Request, res: Response)
         const testRunWithSteps = await TestRepository.getTestRunWithSteps(result.test_run_id);
 
         if (testRunWithSteps) {
-          const failed_steps_details = testRunWithSteps.steps
-            .filter(step => step.status === 'FAILED')
-            .map(step => ({
-              name: step.name,
-              error_message: step.error_message || 'Unknown error'
-            }));
+          // 실패 스텝에 대해 에러 패턴 DB에서 알려진 해결책 조회
+          const failedSteps = testRunWithSteps.steps.filter(step => step.status === 'FAILED');
+          const failed_steps_details = await Promise.all(
+            failedSteps.map(async (step) => {
+              let known_solutions: KnownSolution[] = [];
+              try {
+                const patterns = await errorPatternRepo.searchErrorPatterns({
+                  query: (step.error_message || '').substring(0, 100),
+                  project: project,
+                  limit: 1,
+                });
+                if (patterns.length > 0) {
+                  const solutions = await errorPatternRepo.getSolutionsByPatternId(patterns[0].id);
+                  known_solutions = solutions.slice(0, 3).map(s => ({
+                    solution_title: s.solution_title,
+                    success_rate: s.success_rate ?? undefined,
+                  }));
+                }
+              } catch { /* 해결책 조회 실패 시 무시 */ }
+              return {
+                name: step.name,
+                error_message: step.error_message || 'Unknown error',
+                known_solutions,
+              };
+            })
+          );
 
           await SlackNotifier.sendTestRunNotification({
             project_name: project,
@@ -1054,6 +1076,114 @@ router.get('/reno/low-scoring', authenticateApiKey, async (req: Request, res: Re
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
+});
+
+/**
+ * POST /api/results/playwright
+ * Receive Playwright test results from @workhub/probe probe-reporter
+ */
+router.post('/results/playwright', async (req: Request, res: Response) => {
+  try {
+    const {
+      project_name,
+      scenario_name,
+      environment,
+      status,
+      total_steps,
+      passed_steps,
+      failed_steps,
+      skipped_steps,
+      duration_ms,
+      steps,
+    } = req.body;
+
+    if (!project_name || !steps) {
+      res.status(400).json({ success: false, error: 'project_name and steps are required' });
+      return;
+    }
+
+    // Create test_run record
+    const testRun = await TestRepository.createTestRun({
+      project_name,
+      scenario_slug: scenario_name || `playwright-${new Date().toISOString().split('T')[0]}`,
+      environment: environment || 'development',
+      status: status === 'passed' ? 'PASSED' : status === 'failed' ? 'FAILED' : 'MIXED',
+      triggered_by: 'probe-reporter',
+      total_steps: total_steps || steps.length,
+      passed_steps: passed_steps || 0,
+      failed_steps: failed_steps || 0,
+      skipped_steps: skipped_steps || 0,
+      duration_ms: duration_ms || 0,
+      auto_fix_applied: false,
+      auto_fix_count: 0,
+    });
+
+    // Create test_step records
+    for (const step of steps) {
+      await TestRepository.createTestStep({
+        test_run_id: testRun.id,
+        step_name: step.name,
+        step_type: 'playwright',
+        status: step.status?.toUpperCase() || 'UNKNOWN',
+        duration_ms: step.duration_ms || 0,
+        error_message: step.error_message,
+        error_category: step.error_category,
+      });
+
+      // Record error pattern for failures
+      if (step.error_message && (step.status === 'failed' || step.status === 'timedOut')) {
+        try {
+          const { ErrorPatternRepository } = await import('../../storage/repositories/ErrorPatternRepository.js');
+          await ErrorPatternRepository.recordError({
+            project_name,
+            error_message: step.error_message,
+            error_category: step.error_category || 'UNKNOWN',
+            test_run_id: testRun.id,
+          });
+        } catch {
+          // Error pattern recording is best-effort
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      test_run_id: testRun.id,
+      summary: {
+        total: steps.length,
+        passed: passed_steps,
+        failed: failed_steps,
+        skipped: skipped_steps,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Playwright results API error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * GET /api/scheduler/status
+ * 스케줄러 상태 조회
+ */
+router.get('/scheduler/status', (_req: Request, res: Response) => {
+  // Dynamic import to avoid circular dependency
+  import('../../scheduler/ProbeScheduler.js').then(({ default: scheduler }) => {
+    res.json({
+      success: true,
+      enabled: process.env.PROBE_SCHEDULER === 'true',
+      jobs: scheduler.getJobs(),
+    });
+  }).catch(() => {
+    res.json({
+      success: true,
+      enabled: false,
+      jobs: [],
+    });
+  });
 });
 
 export default router;
